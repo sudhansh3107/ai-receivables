@@ -13,7 +13,7 @@ export default function Header({
             {/* Top Row */}
             <div className="flex items-center justify-between">
                 <h1 className="text-3xl font-bold">
-                    {name} - 🤖 AI Employee
+                    {name} - 🤖 AI Receviables
                 </h1>
 
                 <button
