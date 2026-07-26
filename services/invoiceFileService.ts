@@ -48,3 +48,21 @@ export async function getInvoiceFile(invoiceFileId: string) {
 
   return data;
 }
+
+export async function linkInvoiceToFile(
+    invoiceFileId: string,
+    invoiceId: string
+) {
+    const { data, error } = await supabase
+        .from("invoice_files")
+        .update({
+            invoice_id: invoiceId,
+        })
+        .eq("id", invoiceFileId)
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    return data;
+}

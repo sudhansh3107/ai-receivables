@@ -17,7 +17,7 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState("");
   const normalizedSearch = searchTerm.toLowerCase();
   const filteredInvoices = invoices.filter((invoice) => {
-    return invoice.vendor_name
+    return invoice.invoice_number
         .toLowerCase()
         .includes(normalizedSearch);
   });
@@ -32,10 +32,15 @@ export default function Home() {
         // Artificial delay so we can see the loading screen
         await new Promise((resolve) => setTimeout(resolve, 3000));
 
-        const { data, error } = await supabase
-          .from("invoices")
-          .select("*")
-          .order("invoice_number", { ascending: true });
+       const { data, error } = await supabase
+    .from("invoices")
+    .select(`
+        *,
+        customers (
+            company_name
+        )
+    `)
+    .order("invoice_number", { ascending: true });
 
         if (error) {
           throw error;
@@ -85,15 +90,7 @@ export default function Home() {
           AI Accounts Receivable Employee
         </h2>
 
-        <p>Invoices Processed: {invoicesProcessed}</p>
-
-        <button
-          onClick={() => setInvoicesProcessed(invoicesProcessed + 1)}
-          className="mt-4 rounded bg-blue-600 px-4 py-2 text-white"
-        >
-          Process Invoice
-        </button>
-      </div>
+       </div>
 
       <div>
         <h3 className="mb-4 text-xl font-semibold">

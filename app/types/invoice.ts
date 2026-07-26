@@ -1,8 +1,11 @@
 export type Invoice = {
-  id: number;
+  id: string;
   invoice_number: string;
-  vendor_name: string;
-  invoice_total: number;
+  invoice_amount: number;
   status: string;
   currency: string;
+
+  customers: {
+    company_name: string;
+  } | null;
 };

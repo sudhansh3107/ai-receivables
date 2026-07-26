@@ -23,13 +23,13 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
     hover:border-gray-500
   ">
       <p>Invoice Number: {invoice.invoice_number}</p>
-      <p>Vendor: {invoice.vendor_name}</p>
+      <p>Company Name: {invoice.customers?.company_name}</p>
      <p>
   Amount:{" "}
   {new Intl.NumberFormat(locale, {
     style: "currency",
     currency: invoice.currency,
-      }).format(invoice.invoice_total)}
+      }).format(invoice.invoice_amount)}
 </p>
       <p>Status: {invoice.status}</p>
     </div>

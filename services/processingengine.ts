@@ -1,6 +1,7 @@
-import { getInvoiceFile } from "./invoiceFileService";
+import { getInvoiceFile, linkInvoiceToFile } from "./invoiceFileService";
 import { extractInvoice } from "./server/invoiceExtractionService";
 import { findOrCreateCustomer } from "./server/customerService";
+import { createInvoice } from "./invoiceService";
 
 export async function processInvoice(invoiceFileId: string) {
 
@@ -21,6 +22,29 @@ export async function processInvoice(invoiceFileId: string) {
 
     console.log("👤 Customer");
     console.log(customer);
+
+    const result = await createInvoice(
+    customer.id,
+    invoiceFile.upload_session_id,
+    extractedInvoice
+    );
+
+    const invoice = result.invoice;
+
+    if (result.isDuplicate) {
+    console.log("⚠️ Existing invoice reused");
+    } else {
+    console.log("🆕 New invoice created");
+    }
+
+    console.log(invoice);
+
+    await linkInvoiceToFile(
+    invoiceFile.id,
+    invoice.id
+    );
+
+    console.log("🔗 Invoice linked to file");
 
     console.log("✅ Processing Engine Complete");
     console.log("=================================");
