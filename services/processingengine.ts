@@ -5,6 +5,10 @@ import { createInvoice,findExistingInvoice } from "./invoiceService";
 import { validateInvoice } from "./server/invoiceValidationService";
 import { calculateInvoiceConfidence } from "./server/invoiceConfidenceService";
 import { Invoice } from "@/app/types/invoice";
+import { logInvoiceActivity } from "./server/activityLogService";
+import { ActivityTypes } from "@/lib/activityTypes";
+import { scheduleReminder } from "./server/reminderService";
+import { ReminderStages } from "@/lib/reminderStages";
 
 export async function processInvoice(invoiceFileId: string) {
 
@@ -85,6 +89,37 @@ export async function processInvoice(invoiceFileId: string) {
 
         console.log("📄 Invoice");
         console.log(invoice);
+
+        await logInvoiceActivity(
+        invoice.id,
+        customer.id,
+        ActivityTypes.INVOICE_CREATED,
+        `Invoice ${invoice.invoice_number} created successfully`,
+        {
+            invoiceNumber: invoice.invoice_number,
+            confidenceScore: confidence.score,
+            confidenceLevel: confidence.level,
+            source: "upload",
+            duplicate: isDuplicate,
+        }
+    );
+
+    console.log("📝 Activity logged");
+        
+    await scheduleReminder({
+        invoiceId: invoice.id,
+        customerId: customer.id,
+
+        reminderStage: ReminderStages.FIRST,
+
+        scheduledAt: new Date(extractedInvoice.dueDate),
+
+        channel: "email",
+        }
+    );
+
+    console.log("⏰ Reminder scheduled");
+
 
         // Link Invoice File to Invoice
         await linkInvoiceToFile(

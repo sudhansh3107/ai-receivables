@@ -16,7 +16,7 @@ export async function extractInvoice(
     console.log(`Extracting invoice from ${storagePath}`);
 
     return {
-        invoiceNumber: "INV-1001",
+        invoiceNumber: "INV-1005",
         companyName: "XYZ Industries Pvt Ltd",
         email: "accounts@xyz.com",
         gstNumber: "36ABCDE1234G1Z6",

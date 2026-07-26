@@ -17,7 +17,7 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState("");
   const normalizedSearch = searchTerm.toLowerCase();
   const filteredInvoices = invoices.filter((invoice) => {
-    return invoice.invoice_number
+    return invoice.customers?.company_name
         .toLowerCase()
         .includes(normalizedSearch);
   });
@@ -30,7 +30,7 @@ export default function Home() {
     async function fetchInvoices() {
       try {
         // Artificial delay so we can see the loading screen
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 100));
 
        const { data, error } = await supabase
     .from("invoices")
