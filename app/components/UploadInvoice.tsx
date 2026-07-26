@@ -3,7 +3,7 @@ import { useDropzone } from "react-dropzone";
 
 import ModalHeader from "./ModalHeader";
 import { uploadInvoice } from "@/services/storageService";
-import { extractInvoice } from "@/services/aiService";
+// import { extractInvoice } from "@/services/aiService";
 
 type UploadInvoiceProps = {
     onBack: () => void;
@@ -49,10 +49,12 @@ export default function UploadInvoice({
 
                 const uploadResult = await uploadInvoice(file);
 
-                const extractedData = await extractInvoice(uploadResult.path);
+              //  const extractedData = await extractInvoice(uploadResult.path);
 
                 console.log("Upload Result:", uploadResult);
-                console.log("Extracted Data:", extractedData);
+             //   console.log("Extracted Data:", extractedData);
+            
+              // TODO: Re-enable after OCR + AI extraction pipeline is implemented.              
             }
 
             alert(`${selectedFiles.length} invoice(s) uploaded successfully!`);
