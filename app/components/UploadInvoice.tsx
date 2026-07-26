@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-
+import { createUploadSession } from "@/services/UploadSessionService";
 import ModalHeader from "./ModalHeader";
 import { uploadInvoice } from "@/services/storageService";
 // import { extractInvoice } from "@/services/aiService";
@@ -44,18 +44,26 @@ export default function UploadInvoice({
         try {
             setUploading(true);
 
-            for (const file of selectedFiles) {
-                console.log(`Uploading ${file.name}...`);
+            const uploadSession = await createUploadSession(selectedFiles.length);
 
-                const uploadResult = await uploadInvoice(file);
+            for (const file of selectedFiles) {
+            const uploadResult = await uploadInvoice(file);
+
+            console.log(uploadResult);
+            }
+            
+     //       for (const file of selectedFiles) {
+      //          console.log(`Uploading ${file.name}...`);
+//
+        //        const uploadResult = await uploadInvoice(file);
 
               //  const extractedData = await extractInvoice(uploadResult.path);
 
-                console.log("Upload Result:", uploadResult);
+       //         console.log("Upload Result:", uploadResult);
              //   console.log("Extracted Data:", extractedData);
             
               // TODO: Re-enable after OCR + AI extraction pipeline is implemented.              
-            }
+     //       }
 
             alert(`${selectedFiles.length} invoice(s) uploaded successfully!`);
 
