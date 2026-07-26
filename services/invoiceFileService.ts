@@ -34,3 +34,17 @@ export async function createInvoiceFile({
 
     return data;
 }
+
+export async function getInvoiceFile(invoiceFileId: string) {
+  const { data, error } = await supabase
+    .from("invoice_files")
+    .select("*")
+    .eq("id", invoiceFileId)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}

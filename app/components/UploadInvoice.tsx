@@ -6,6 +6,7 @@ import ModalHeader from "./ModalHeader";
 import { uploadInvoice } from "@/services/storageService";
 import { createInvoiceFile } from "@/services/invoiceFileService";
 import { useUploadSession } from "../hooks/useUploadSession";
+import { processInvoice } from "@/services/processingengine";
 
 // import { extractInvoice } from "@/services/aiService";
 
@@ -74,13 +75,15 @@ for (const file of selectedFiles) {
 
     const uploadResult = await uploadInvoice(file);
 
-    await createInvoiceFile({
-        uploadSessionId: uploadSession.id,
-        fileName: file.name,
-        storagePath: uploadResult.path,
-        mimeType: file.type,
-        fileSizeBytes: file.size,
-    });
+    const invoiceFile = await createInvoiceFile({
+    uploadSessionId: uploadSession.id,
+    fileName: file.name,
+    storagePath: uploadResult.path,
+    mimeType: file.type,
+    fileSizeBytes: file.size,
+});
+
+await processInvoice(invoiceFile.id);
 
     processed++;
 
