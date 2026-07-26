@@ -1,7 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { ExtractedInvoice } from "./server/invoiceExtractionService";
+import { InvoiceConfidenceResult } from "./server/invoiceConfidenceService";
 
-async function findExistingInvoice(
+export async function findExistingInvoice(
     customerId: string,
     invoiceNumber: string
 ) {
@@ -20,21 +21,11 @@ async function findExistingInvoice(
 export async function createInvoice(
     customerId: string,
     uploadSessionId: string | null,
-    invoice: ExtractedInvoice
+    invoice: ExtractedInvoice,
+    confidence: InvoiceConfidenceResult
 ) {
 
-    const existingInvoice = await findExistingInvoice(
-        customerId,
-        invoice.invoiceNumber
-    );
-
-    if (existingInvoice) {
-        console.log("⚠️ Duplicate Invoice Detected");
-        return {
-        invoice: existingInvoice,
-        isDuplicate: true,
-        };
-    }
+    
 
     const { data, error } = await supabase
         .from("invoices")
@@ -53,14 +44,15 @@ export async function createInvoice(
 
             status: "pending",
             source_type: "upload",
+
+            invoice_confidence_score: confidence.score,
+            invoice_confidence_level: confidence.level,
+            invoice_confidence_reasons: confidence.reasons,
         })
         .select()
         .single();
 
     if (error) throw error;
 
-    return {
-    invoice: data,
-    isDuplicate: false,
-    };
+    return data;
 }

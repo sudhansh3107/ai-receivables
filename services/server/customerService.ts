@@ -10,7 +10,11 @@ export async function findOrCreateCustomer(
 
         if (customer) {
             console.log("✅ Customer found by GST");
-            return customer;
+
+            return {
+                customer,
+                isNew: false,
+            };
         }
     }
 
@@ -20,14 +24,23 @@ export async function findOrCreateCustomer(
 
         if (customer) {
             console.log("✅ Customer found by Email");
-            return customer;
+
+            return {
+                customer,
+                isNew: false,
+            };
         }
     }
 
     // Step 3 - Create Customer
     console.log("🆕 Creating new customer");
 
-    return await createCustomer(invoice);
+    const customer = await createCustomer(invoice);
+
+    return {
+        customer,
+        isNew: true,
+    };
 }
 
 async function findByGST(gst: string) {

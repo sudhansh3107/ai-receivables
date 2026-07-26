@@ -17,12 +17,12 @@ export async function extractInvoice(
 
     return {
         invoiceNumber: "INV-1001",
-        companyName: "ABC Industries Pvt Ltd",
-        email: "accounts@abc.com",
-        gstNumber: "36ABCDE1234F1Z5",
-        invoiceDate: "2026-07-26",
+        companyName: "XYZ Industries Pvt Ltd",
+        email: "accounts@xyz.com",
+        gstNumber: "36ABCDE1234G1Z6",
+        invoiceDate: "2026-07-31",
         dueDate: "2026-08-25",
         currency: "INR",
-        invoiceAmount: 15000,
+        invoiceAmount: 150000,
     };
 }
