@@ -1,8 +1,12 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useDropzone } from "react-dropzone";
-import { createUploadSession } from "@/services/UploadSessionService";
+import { createUploadSession,updateProcessedFiles,completeUploadSession } from "@/services/UploadSessionService";
 import ModalHeader from "./ModalHeader";
 import { uploadInvoice } from "@/services/storageService";
+import { createInvoiceFile } from "@/services/invoiceFileService";
+import { useUploadSession } from "../hooks/useUploadSession";
+
 // import { extractInvoice } from "@/services/aiService";
 
 type UploadInvoiceProps = {
@@ -16,6 +20,22 @@ export default function UploadInvoice({
 }: UploadInvoiceProps) {
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [uploading, setUploading] = useState(false);
+    const [uploadSessionId, setUploadSessionId] = useState<string | null>(null);
+    const [successShown, setSuccessShown] = useState(false);
+    const session = useUploadSession(uploadSessionId);
+   useEffect(() => {
+    if (
+        session &&
+        !successShown &&
+        session.processed_files === session.total_files &&
+        session.processing_status === "uploaded"
+    ) {
+        setSuccessShown(true);
+        toast.success(
+  `${session.total_files} invoice(s) uploaded successfully!`
+);
+    }
+}, [session, successShown]);
 
     const onDrop = useCallback((acceptedFiles: File[]) => {
         if (acceptedFiles.length === 0) return;
@@ -43,30 +63,35 @@ export default function UploadInvoice({
 
         try {
             setUploading(true);
-
+            setSuccessShown(false);
+            
             const uploadSession = await createUploadSession(selectedFiles.length);
+            setUploadSessionId(uploadSession.id);
 
-            for (const file of selectedFiles) {
-            const uploadResult = await uploadInvoice(file);
+let processed = 0;
 
-            console.log(uploadResult);
-            }
+for (const file of selectedFiles) {
+
+    const uploadResult = await uploadInvoice(file);
+
+    await createInvoiceFile({
+        uploadSessionId: uploadSession.id,
+        fileName: file.name,
+        storagePath: uploadResult.path,
+        mimeType: file.type,
+        fileSizeBytes: file.size,
+    });
+
+    processed++;
+
+    await updateProcessedFiles(
+        uploadSession.id,
+        processed
+    );
+}
+
+        await completeUploadSession(uploadSession.id);
             
-     //       for (const file of selectedFiles) {
-      //          console.log(`Uploading ${file.name}...`);
-//
-        //        const uploadResult = await uploadInvoice(file);
-
-              //  const extractedData = await extractInvoice(uploadResult.path);
-
-       //         console.log("Upload Result:", uploadResult);
-             //   console.log("Extracted Data:", extractedData);
-            
-              // TODO: Re-enable after OCR + AI extraction pipeline is implemented.              
-     //       }
-
-            alert(`${selectedFiles.length} invoice(s) uploaded successfully!`);
-
             setSelectedFiles([]);
         } catch (error) {
             console.error(error);
@@ -129,6 +154,18 @@ export default function UploadInvoice({
                         ))}
                     </div>
                 </div>
+            )}
+            
+            {session && (
+            <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4">
+            <p className="font-medium">
+            {session.processed_files} / {session.total_files} files uploaded
+            </p>
+
+            <p className="text-sm text-gray-500">
+            Status: {session.processing_status}
+            </p>
+            </div>
             )}
 
             <button

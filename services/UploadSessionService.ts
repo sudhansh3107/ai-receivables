@@ -21,3 +21,28 @@ export async function createUploadSession(totalFiles: number) {
 
     return data;
 }
+
+export async function updateProcessedFiles(
+  sessionId: string,
+  processedFiles: number
+) {
+  const { error } = await supabase
+    .from("upload_sessions")
+    .update({
+      processed_files: processedFiles,
+    })
+    .eq("id", sessionId);
+
+  if (error) throw error;
+}
+
+export async function completeUploadSession(sessionId: string) {
+  const { error } = await supabase
+    .from("upload_sessions")
+    .update({
+      processing_status: "uploaded",
+    })
+    .eq("id", sessionId);
+
+  if (error) throw error;
+}
