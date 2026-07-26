@@ -66,3 +66,22 @@ export async function linkInvoiceToFile(
 
     return data;
 }
+
+export async function updateProcessingStatus(
+  invoiceFileId: string,
+  status: "uploaded" | "processing" | "completed" | "failed",
+  failureReason?: string
+) {
+  const { error } = await supabase
+    .from("invoice_files")
+    .update({
+      processing_status: status,
+      failure_reason: failureReason ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", invoiceFileId);
+
+  if (error) {
+    throw error;
+  }
+}
