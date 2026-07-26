@@ -56,14 +56,11 @@ export default function Home() {
     return <LoadingState message="Loading invoices..." />;
   }
 
-  if (invoices.length === 0) {
-    return (
-      <EmptyState
-        heading="No invoices yet 📄"
-        description="Upload your first invoice to get started."
-      />
-    );
-  }
+ {invoices.length === 0 && (
+  <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-gray-600">
+    No invoices yet. Upload one to get started.
+  </div>
+)}
 
   return (
     <main className="p-8 space-y-6">

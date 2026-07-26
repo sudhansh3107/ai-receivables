@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
-const BUCKET_NAME = "invoice-files";
+const BUCKET_NAME = "invoices";
 
 export async function uploadInvoice(file: File) {
     const fileName = `${Date.now()}-${file.name}`;
