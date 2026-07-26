@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { testOpenAI } from "@/services/server/invoiceExtractionService";
+//import { testOpenAI } from "@/services/server/invoiceExtractionService";
 
 export async function POST(request: NextRequest) {
   try {
@@ -7,11 +7,11 @@ export async function POST(request: NextRequest) {
     await request.json();
 
     // Test the OpenAI connection
-    const message = await testOpenAI();
+   // const message = await testOpenAI();
 
     return NextResponse.json({
       success: true,
-      message,
+  //    message,
     });
   } catch (error) {
     console.error("OpenAI Test Error:", error);
