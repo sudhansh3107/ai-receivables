@@ -23,6 +23,6 @@ export async function extractInvoice(
         invoiceDate: "2026-07-26",
         dueDate: "2026-08-25",
         currency: "INR",
-        invoiceAmount: 125000,
+        invoiceAmount: 15000,
     };
 }
