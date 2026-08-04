@@ -6,7 +6,7 @@ import ModalHeader from "./ModalHeader";
 import { uploadInvoice } from "@/services/storageService";
 import { createInvoiceFile } from "@/services/invoiceFileService";
 import { useUploadSession } from "../hooks/useUploadSession";
-import { processInvoice } from "@/services/processingengine";
+import { processInvoiceAction } from "@/app/actions/processInvoiceAction";
 
 // import { extractInvoice } from "@/services/aiService";
 
@@ -83,7 +83,7 @@ for (const file of selectedFiles) {
     fileSizeBytes: file.size,
 });
 
-await processInvoice(invoiceFile.id);
+await processInvoiceAction(invoiceFile.id);
 
     processed++;
 

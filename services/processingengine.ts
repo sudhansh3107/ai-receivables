@@ -132,7 +132,7 @@ export async function processInvoice(invoiceFileId: string) {
         // Update Processing Status
         await updateProcessingStatus(
             invoiceFile.id,
-            "completed"
+            "processed"
         );
 
         console.log("✅ Processing Engine Complete");

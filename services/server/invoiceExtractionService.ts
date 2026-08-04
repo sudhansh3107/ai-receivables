@@ -1,98 +1,123 @@
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { openai } from "@/lib/openai";
+
 export interface ExtractedInvoice {
-    invoiceNumber: string;
-    companyName: string;
-    email?: string;
-    gstNumber?: string;
-    invoiceDate: string;
-    dueDate: string;
-    currency: string;
-    invoiceAmount: number;
-}
-
-const companies = [
-    "XYZ Industries Pvt Ltd",
-    "ABC Manufacturing Pvt Ltd",
-    "TechNova Solutions",
-    "Prime Logistics",
-    "Green Energy Systems",
-    "Metro Electronics",
-    "Elite Packaging",
-    "Vision Technologies",
-    "Silverline Traders",
-    "Apex Industries",
-];
-
-function randomItem<T>(items: T[]): T {
-    return items[Math.floor(Math.random() * items.length)];
-}
-
-function randomBetween(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function generateGST(): string {
-    const stateCode = randomBetween(10, 37);
-
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const numbers = "0123456789";
-
-    const randomChar = () =>
-        chars[Math.floor(Math.random() * chars.length)];
-
-    const randomNumber = () =>
-        numbers[Math.floor(Math.random() * numbers.length)];
-
-    return (
-        stateCode.toString().padStart(2, "0") +
-        randomChar() +
-        randomChar() +
-        randomChar() +
-        randomChar() +
-        randomChar() +
-        randomNumber() +
-        randomNumber() +
-        randomNumber() +
-        randomNumber() +
-        randomChar() +
-        "1Z" +
-        randomNumber()
-    );
+  invoiceNumber: string;
+  companyName: string;
+  companyAddress: string | null;
+  email: string | null;
+  gstNumber: string | null;
+  invoiceDate: string;
+  dueDate: string;
+  paymentTerms: string | null;
+  currency: string;
+  subtotal: number;
+  cgst: number;
+  sgst: number;
+  invoiceAmount: number;
 }
 
 export async function extractInvoice(
-    storagePath: string
+  storagePath: string
 ): Promise<ExtractedInvoice> {
-    console.log(`Extracting invoice from ${storagePath}`);
+  const { data, error } = await supabaseAdmin.storage
+    .from("invoices")
+    .createSignedUrl(storagePath, 300);
 
-    const companyName = randomItem(companies);
+  if (error) {
+    console.error("❌ Failed to create signed URL", error);
+    throw error;
+  }
 
-    const today = new Date();
+  const response = await openai.responses.create({
+    model: "gpt-5.5",
 
-    const dueDate = new Date(today);
-    dueDate.setDate(today.getDate() + randomItem([15, 30, 45, 60]));
+    reasoning: {
+      effort: "none",
+    },
+    
 
-    const companySlug = companyName
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "");
+    text: {
+      verbosity: "low",
+      format: {
+        type: "json_schema",
+        name: "invoice_extraction",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            invoiceNumber: { type: "string" },
+            companyName: { type: "string" },
+            companyAddress: { type: ["string", "null"] },
+            email: { type: ["string", "null"] },
+            gstNumber: { type: ["string", "null"] },
+            invoiceDate: { type: "string" },
+            dueDate: { type: "string" },
+            paymentTerms: { type: ["string", "null"] },
+            currency: { type: "string" },
+            subtotal: { type: "number" },
+            cgst: { type: "number" },
+            sgst: { type: "number" },
+            invoiceAmount: { type: "number" },
+          },
+          required: [
+            "invoiceNumber",
+            "companyName",
+            "companyAddress",
+            "email",
+            "gstNumber",
+            "invoiceDate",
+            "dueDate",
+            "paymentTerms",
+            "currency",
+            "subtotal",
+            "cgst",
+            "sgst",
+            "invoiceAmount",
+          ],
+        },
+      },
+    },
 
-    return {
-        invoiceNumber: `INV-${crypto
-            .randomUUID()
-            .slice(0, 8)
-            .toUpperCase()}`,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: `
+Extract the invoice.
 
-        companyName,
+Rules:
+- Return data matching the JSON schema.
+- If a field is missing, return null.
+- Do not infer missing values.
+- Convert all dates to YYYY-MM-DD.
+- Currency must be an ISO code (e.g. INR, USD).
+- Monetary values must be numbers only.
+`,
+          },
+          {
+            type: "input_file",
+            file_url: data.signedUrl,
+          },
+        ],
+      },
+    ],
+  });
 
-        email: `accounts@${companySlug}.com`,
+  console.log("Model:", response.model);
 
-        gstNumber: generateGST(),
+console.log("Usage:");
+console.log(response.usage);
 
-        invoiceDate: today.toISOString().split("T")[0],
+console.log("Output:");
+console.log(response.output_text);
 
-        dueDate: dueDate.toISOString().split("T")[0],
+  if (!response.output_text) {
+    throw new Error("OpenAI returned an empty response.");
+  }
 
-        currency: "INR",
-
-        invoiceAmount: randomBetween(5000, 250000),
-    };
+  return JSON.parse(response.output_text) as ExtractedInvoice;
 }

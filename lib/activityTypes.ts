@@ -1,6 +1,7 @@
 export const ActivityTypes = {
     INVOICE_CREATED: "invoice_created",
     INVOICE_VALIDATED: "invoice_validated",
+    INVOICE_UPLOADED: "invoice_uploaded",
     INVOICE_CONFIDENCE_CALCULATED: "invoice_confidence_calculated",
 
     CUSTOMER_CREATED: "customer_created",
