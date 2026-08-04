@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useDropzone } from "react-dropzone";
 import { createUploadSession,updateProcessedFiles,completeUploadSession } from "@/services/UploadSessionService";
-import ModalHeader from "./ModalHeader";
+import ModalHeader from "@/app/components/shared/ModalHeader";
 import { uploadInvoice } from "@/services/storageService";
 import { createInvoiceFile } from "@/services/invoiceFileService";
-import { useUploadSession } from "../hooks/useUploadSession";
+import { useUploadSession } from "@/app/hooks/useUploadSession";
 import { processInvoiceAction } from "@/app/actions/processInvoiceAction";
 
 // import { extractInvoice } from "@/services/aiService";

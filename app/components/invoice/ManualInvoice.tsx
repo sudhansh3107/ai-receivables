@@ -1,4 +1,4 @@
-import ModalHeader from "./ModalHeader";
+import ModalHeader from "@/app/components/shared/ModalHeader";
 
 type ManualInvoiceProps = {
     onBack: () => void;

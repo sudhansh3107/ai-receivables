@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Header from "./components/Header";
-import LoadingState from "./components/LoadingState";
-import EmptyState from "./components/EmptyState";
-import InvoiceList from "./components/InvoiceList";
+import Header from "./components/layout/Header";
+import LoadingState from "./components/shared/LoadingState";
+import EmptyState from "./components/shared/EmptyState";
+import InvoiceList from "./components/invoice/InvoiceList";
 import { supabase } from "../lib/supabase";
 import type { Invoice } from "./types/invoice";
-import SearchBar from "./components/SearchBar";
-import NewInvoiceModal from "./components/NewInvoiceModal";
+import SearchBar from "./components/shared/SearchBar";
+import NewInvoiceModal from "./components/invoice/NewInvoiceModal";
+
 
 export default function Home() {
   const [invoicesProcessed, setInvoicesProcessed] = useState(0);
