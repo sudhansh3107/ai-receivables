@@ -7,7 +7,7 @@ import MissionCard from "../components/dashboard/MissionCard";
 import DigitalEmployee from "../components/dashboard/DigitalEmployee";
 import QuickActions from "../components/dashboard/QuickActions";
 import ActivityTimeline from "../components/dashboard/ActivityTimeline";
-import Page from "../components/ui/page";
+import Page from "../components/ui/Page";
 
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";

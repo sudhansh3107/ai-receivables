@@ -5,99 +5,83 @@ import {
   Bell,
   Search,
   Sparkles,
-  UserCircle2,
 } from "lucide-react";
 
 import Button from "../ui/Button";
-import { tokens } from "@/lib/theme/tokens";
 
 export default function TopBar() {
   return (
     <motion.header
-      initial={{ opacity: 0, y: -10 }}
+      initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      className="flex items-center justify-between border-b px-8 py-6"
-      style={{
-        backgroundColor: tokens.semantic.surface,
-        borderColor: tokens.semantic.border,
-      }}
+      transition={{ duration: 0.22 }}
+      className="sticky top-0 z-50 bg-[#F8F5F1]"
     >
-      {/* Left */}
-      <div>
-        <h1
-          className="text-3xl font-bold"
-          style={{
-            color: tokens.semantic.textPrimary,
-          }}
-        >
-          Headquarters
-        </h1>
+      <div className="mx-auto max-w-[1600px] px-10 pt-4 pb-0">
 
-        <p
-          className="mt-1 text-sm"
-          style={{
-            color: tokens.semantic.textMuted,
-          }}
-        >
-          Your Digital Workforce is active.
-        </p>
-      </div>
+        {/* ROW 1 */}
 
-      {/* Right */}
-      <div className="flex items-center gap-4">
+        <div className="flex items-center justify-end gap-7">
 
-        {/* Search */}
-        <div
-          className="flex w-72 items-center gap-2 rounded-xl border px-4 py-3"
-          style={{
-            borderColor: tokens.semantic.border,
-            backgroundColor: tokens.semantic.surface,
-          }}
-        >
-          <Search
-            size={18}
-            color={tokens.semantic.textMuted}
-          />
+          <button className="transition duration-200 hover:scale-105">
 
-          <input
-            placeholder="Search invoices, customers..."
-            className="w-full bg-transparent outline-none"
-          />
+            <Search
+              size={20}
+              strokeWidth={1.9}
+            />
+
+          </button>
+
+          <button className="relative transition duration-200 hover:scale-105">
+
+            <Bell
+              size={20}
+              strokeWidth={1.9}
+            />
+
+            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#C96A50] text-[9px] font-semibold text-white">
+              2
+            </span>
+
+          </button>
+
+          <Button>
+
+            <div className="flex items-center gap-2">
+
+              <Sparkles size={15} />
+
+              <span className="text-[14px] font-medium">
+                Ask Employee
+              </span>
+
+            </div>
+
+          </Button>
+
         </div>
 
-        {/* Notification */}
-        <button
-          className="rounded-xl border p-3"
-          style={{
-            borderColor: tokens.semantic.border,
-          }}
-        >
-          <Bell
-            size={20}
-            color={tokens.semantic.textSecondary}
-          />
-        </button>
+        {/* ROW 2 */}
 
-        {/* Ask Orion */}
-        <Button>
-          <Sparkles size={18} />
+        <div className="mt-2">
 
-          Ask Orion
-        </Button>
+          <div className="flex items-center gap-3">
 
-        {/* Profile */}
-        <button
-          className="rounded-full border p-2"
-          style={{
-            borderColor: tokens.semantic.border,
-          }}
-        >
-          <UserCircle2
-            size={28}
-            color={tokens.semantic.textSecondary}
-          />
-        </button>
+            <span className="text-[13px] font-medium tracking-[-0.01em] text-[#5D5853]">
+              Accounts Receivable Employee
+            </span>
+
+            <div className="rounded-lg border border-[#ECE5DD] bg-[#F7F3EE] px-3 py-[6px]">
+
+              <span className="text-[12px] font-medium text-[#66615B]">
+                AR-01
+              </span>
+
+            </div>
+
+          </div>
+
+        </div>
 
       </div>
     </motion.header>

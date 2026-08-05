@@ -1,10 +1,9 @@
 "use client";
 
-import { motion } from "motion/react";
-import { tokens } from "@/lib/theme/tokens";
-
 import { ReactNode } from "react";
-import { HTMLMotionProps } from "motion/react";
+import { motion, HTMLMotionProps } from "motion/react";
+
+import { tokens } from "@/lib/theme/tokens";
 
 interface ButtonProps extends HTMLMotionProps<"button"> {
   children: ReactNode;
@@ -13,69 +12,73 @@ interface ButtonProps extends HTMLMotionProps<"button"> {
 
 export default function Button({
   children,
-  variant = "primary",
+  variant = "secondary",
   className = "",
   ...props
 }: ButtonProps) {
-  const styles = {
-    primary: {
-      backgroundColor: tokens.brand.primary,
-      color: tokens.colors.white,
-      border: "none",
-    },
+ const styles = {
+  primary: {
+    background: tokens.brand.primary,
+    color: tokens.colors.white,
+    border: "none",
+  },
 
-    secondary: {
-      backgroundColor: tokens.colors.white,
-      color: tokens.semantic.textPrimary,
-      border: `1px solid ${tokens.semantic.border}`,
-    },
+  secondary: {
+    background: "transparent",
+    color: tokens.semantic.textPrimary,
+    border: `1px solid ${tokens.semantic.border}`,
+  },
 
-    ghost: {
-      backgroundColor: "transparent",
-      color: tokens.semantic.textPrimary,
-      border: "none",
-    },
+  ghost: {
+    background: "transparent",
+    color: tokens.semantic.textPrimary,
+    border: "none",
+  },
 
-    danger: {
-      backgroundColor: tokens.semantic.danger,
-      color: tokens.colors.white,
-      border: "none",
-    },
-  };
+  danger: {
+    background: tokens.semantic.danger,
+    color: tokens.colors.white,
+    border: "none",
+  },
+};
 
   return (
     <motion.button
-      whileHover={{
-        scale: 1.02,
-      }}
+      whileHover={
+        variant === "secondary"
+          ? {
+              y: -1,
+              backgroundColor: tokens.brand.primary,
+              color: tokens.colors.white,
+              borderColor: tokens.brand.primary,
+            }
+          : {
+              y: -1,
+            }
+      }
       whileTap={{
         scale: 0.98,
       }}
       transition={{
-        duration: 0.15,
+        duration: 0.18,
       }}
       className={`
         inline-flex
         items-center
-        justify-center
-        rounded-xl
+        gap-2
+        h-10
         px-5
-        py-3
+        rounded-xl
         text-sm
-        font-semibold
+        font-medium
+        whitespace-nowrap
+        cursor-pointer
         transition-all
         duration-200
-        cursor-pointer
-        disabled:opacity-50
-        disabled:cursor-not-allowed
         ${className}
       `}
       style={{
-        borderRadius: tokens.radius.md,
-        boxShadow:
-          variant === "primary"
-            ? tokens.shadows.sm
-            : "none",
+        boxShadow: "none",
         ...styles[variant],
       }}
       {...props}

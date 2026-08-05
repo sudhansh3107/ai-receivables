@@ -1,42 +1,26 @@
 "use client";
 
-import { ReactNode } from "react";
-
-import Sidebar from "./Sidebar";
+import Sidebar from "../sidebar/Sidebar";
 import TopBar from "./TopBar";
-
-import { tokens } from "@/lib/theme/tokens";
-
-interface AppShellProps {
-  children: ReactNode;
-}
 
 export default function AppShell({
   children,
-}: AppShellProps) {
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <main
-      className="flex min-h-screen"
-      style={{
-        backgroundColor: tokens.semantic.background,
-      }}
-    >
-      {/* Sidebar */}
+    <div className="flex min-h-screen bg-[#F8F5F2]">
+
       <Sidebar />
 
-      {/* Main Area */}
-      <div
-        className="flex flex-1 flex-col"
-        style={{
-          backgroundColor: tokens.semantic.background,
-        }}
-      >
+      <div className="flex flex-1 flex-col">
+
         <TopBar />
 
-        <div className="flex-1 overflow-y-auto">
-          {children}
-        </div>
+        {children}
+
       </div>
-    </main>
+
+    </div>
   );
 }

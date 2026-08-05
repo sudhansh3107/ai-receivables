@@ -1,5 +1,4 @@
 import { ReactNode } from "react";
-import { tokens } from "@/lib/theme/tokens";
 
 interface PageProps {
   children: ReactNode;
@@ -10,19 +9,18 @@ interface PageProps {
 export default function Page({
   children,
   className = "",
-  maxWidth,
+  maxWidth = "1600px",
 }: PageProps) {
   return (
     <main
       className={className}
       style={{
         width: "100%",
-        maxWidth: maxWidth ?? tokens.layout.contentMaxWidth,
+        maxWidth,
         margin: "0 auto",
-        padding: tokens.layout.contentPadding,
+        padding: "20px 36px 32px",
         display: "flex",
         flexDirection: "column",
-        gap: tokens.spacing.xl,
       }}
     >
       {children}
