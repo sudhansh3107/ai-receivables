@@ -30,7 +30,7 @@ export default function SidebarItem({
         }}
         className="group relative flex h-12 items-center rounded-2xl px-4"
         style={{
-          backgroundColor: active ? "#4A3927" : "transparent",
+          backgroundColor: active ? "#4A3927" : "rgba(255,255,255,0)",
         }}
       >
         <Icon

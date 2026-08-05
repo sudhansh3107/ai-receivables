@@ -13,17 +13,17 @@ export default function Hero() {
       transition={{ duration: 0.25 }}
       className="-mt-3"
     >
-      <div className="flex items-start justify-between gap-14">
+      <div className="flex items-stretch justify-between gap-14">
 
         {/* Left Hero */}
 
-        <div className="w-[400px] shrink-0 -mt-5">
+        <div className="flex w-[400px] shrink-0 -mt-5">
           <HeroContent />
         </div>
 
         {/* Right Metrics */}
 
-        <div className="flex-1">
+        <div className="flex flex-1 items-end">
           <MetricsPanel />
         </div>
 

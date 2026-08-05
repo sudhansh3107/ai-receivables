@@ -9,15 +9,29 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen bg-[#F8F5F2]">
+    <div className="h-screen overflow-hidden bg-[#F8F5F2]">
 
-      <Sidebar />
+      {/* Fixed Sidebar */}
 
-      <div className="flex flex-1 flex-col">
+      <div className="fixed left-0 top-0 z-50 h-screen w-64">
+        <Sidebar />
+      </div>
 
-        <TopBar />
+      {/* Main Area */}
 
-        {children}
+      <div className="ml-64 flex h-screen flex-col">
+
+        {/* Fixed Top Bar */}
+
+        <div className="sticky top-0 z-40">
+          <TopBar />
+        </div>
+
+        {/* Scrollable Content */}
+
+        <main className="flex-1 overflow-y-auto">
+          {children}
+        </main>
 
       </div>
 

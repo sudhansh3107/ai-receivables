@@ -42,7 +42,7 @@ export default function HeroContent() {
   />
 
   <span className="text-[13px] font-semibold text-[#3E3A35]">
-    Trusted
+    Trust
   </span>
 
   <span className="text-[#B8AEA3]">•</span>

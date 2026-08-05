@@ -24,13 +24,13 @@ export default function Button({
   },
 
   secondary: {
-    background: "transparent",
+    background: "rgba(255,255,255,0)",
     color: tokens.semantic.textPrimary,
     border: `1px solid ${tokens.semantic.border}`,
   },
 
   ghost: {
-    background: "transparent",
+    background: "rgba(255,255,255,0)",
     color: tokens.semantic.textPrimary,
     border: "none",
   },
