@@ -5,6 +5,8 @@ import { ReactNode } from "react";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 
+import { tokens } from "@/lib/theme/tokens";
+
 interface AppShellProps {
   children: ReactNode;
 }
@@ -16,23 +18,24 @@ export default function AppShell({
     <main
       className="flex min-h-screen"
       style={{
-        backgroundColor: "#F8FAFC",
+        backgroundColor: tokens.semantic.background,
       }}
     >
       {/* Sidebar */}
       <Sidebar />
 
       {/* Main Area */}
-      <div className="flex flex-1 flex-col">
-
+      <div
+        className="flex flex-1 flex-col"
+        style={{
+          backgroundColor: tokens.semantic.background,
+        }}
+      >
         <TopBar />
 
-        <div className="flex-1 p-8">
-          <div className="mx-auto max-w-7xl">
-            {children}
-          </div>
+        <div className="flex-1 overflow-y-auto">
+          {children}
         </div>
-
       </div>
     </main>
   );

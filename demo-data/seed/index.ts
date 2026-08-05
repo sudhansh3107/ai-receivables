@@ -10,6 +10,7 @@ import { seedPayments } from "./payments";
 import { generateReminders } from "../generator/reminders";
 import { seedReminders } from "./reminders";
 import { seedActivities } from "./activities";
+import { reconcileInvoices } from "./reconcileInvoices";
 
 import { cleanupDatabase } from "./cleanup";
 
@@ -47,6 +48,8 @@ await seedPayments(
   customerIdMap,
   invoiceIdMap
 );
+
+await reconcileInvoices();
 
 const reminders = generateReminders(
   invoices,

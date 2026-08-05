@@ -19,23 +19,26 @@ export default function Card({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={interactive ? { y: -2 } : undefined} 
+      whileHover={
+        interactive
+          ? {
+              y: -4,
+              boxShadow: tokens.shadows.lg,
+            }
+          : undefined
+      }
       transition={{
         duration: 0.25,
         ease: "easeOut",
       }}
-      className={`
-        border
-        p-6
-        transition-all
-        duration-300
-        ${className}
-      `}
+      className={className}
       style={{
-        backgroundColor: tokens.semantic.card,
-        borderColor: tokens.semantic.border,
-        borderRadius: tokens.radius.lg,
-        boxShadow: tokens.shadows.sm,
+        background: tokens.semantic.surface,
+        border: `1px solid ${tokens.semantic.border}`,
+        borderRadius: tokens.radius.xl,
+        boxShadow: tokens.shadows.md,
+        padding: tokens.layout.cardPadding,
+        transition: `all ${tokens.motion.normal} ease`,
       }}
     >
       {children}

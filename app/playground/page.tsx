@@ -2,11 +2,12 @@
 
 import AppShell from "../components/layout/AppShell";
 
-import ExecutiveBriefing from "../components/dashboard/ExecutiveBriefing";
+import MissionControl from "../components/dashboard/MissionControl";
 import MissionCard from "../components/dashboard/MissionCard";
-import OrionPanel from "../components/dashboard/OrionPanel";
+import DigitalEmployee from "../components/dashboard/DigitalEmployee";
 import QuickActions from "../components/dashboard/QuickActions";
 import ActivityTimeline from "../components/dashboard/ActivityTimeline";
+import Page from "../components/ui/page";
 
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -14,9 +15,9 @@ import Button from "../components/ui/Button";
 export default function PlaygroundPage() {
   return (
     <AppShell>
-      <div className="space-y-8">
+      <Page>
 
-        <ExecutiveBriefing />
+        <MissionControl />
 
         <div className="grid grid-cols-12 gap-6">
           <div className="col-span-4">
@@ -24,7 +25,7 @@ export default function PlaygroundPage() {
           </div>
 
           <div className="col-span-8">
-            <OrionPanel />
+            <DigitalEmployee />
           </div>
         </div>
 
@@ -32,64 +33,7 @@ export default function PlaygroundPage() {
 
         <ActivityTimeline />
 
-        {/* UI Library */}
-        <section className="border-t pt-10 space-y-10">
-          <div>
-            <h2 className="text-2xl font-bold">
-              UI Components
-            </h2>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold">
-              Cards
-            </h3>
-
-            <Card>
-              <h3 className="text-xl font-semibold">
-                Normal Card
-              </h3>
-
-              <p className="mt-2 text-slate-600">
-                This card remains static.
-              </p>
-            </Card>
-
-            <Card interactive>
-              <h3 className="text-xl font-semibold">
-                Interactive Card
-              </h3>
-
-              <p className="mt-2 text-slate-600">
-                Hover me to see the interaction.
-              </p>
-            </Card>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold">
-              Buttons
-            </h3>
-
-            <div className="flex gap-4 flex-wrap">
-              <Button>Upload Invoice</Button>
-
-              <Button variant="secondary">
-                Cancel
-              </Button>
-
-              <Button variant="ghost">
-                Learn More
-              </Button>
-
-              <Button variant="danger">
-                Delete
-              </Button>
-            </div>
-          </div>
-        </section>
-
-      </div>
+      </Page>
     </AppShell>
   );
 }

@@ -1,51 +1,44 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Header from "./components/layout/Header";
+
+import Page from "./components/ui/page";
+
+import MissionControl from "./components/dashboard/MissionControl";
+import MissionCard from "./components/dashboard/MissionCard";
+import DigitalEmployee from "./components/dashboard/DigitalEmployee";
+import QuickActions from "./components/dashboard/QuickActions";
+import ActivityTimeline from "./components/dashboard/ActivityTimeline";
+
 import LoadingState from "./components/shared/LoadingState";
-import EmptyState from "./components/shared/EmptyState";
-import InvoiceList from "./components/invoice/InvoiceList";
-import { supabase } from "../lib/supabase";
-import type { Invoice } from "./types/invoice";
-import SearchBar from "./components/shared/SearchBar";
+import { buildDashboardStats } from "./components/dashboard/stats";
+
 import NewInvoiceModal from "./components/invoice/NewInvoiceModal";
 
+import { supabase } from "../lib/supabase";
+import type { Invoice } from "./types/invoice";
 
 export default function Home() {
-  const [invoicesProcessed, setInvoicesProcessed] = useState(0);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const normalizedSearch = searchTerm.toLowerCase();
-  const filteredInvoices = invoices.filter((invoice) => {
-    return invoice.customers?.company_name
-        .toLowerCase()
-        .includes(normalizedSearch);
-  });
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isNewInvoiceOpen, setIsNewInvoiceOpen] = useState(false);
-  const openNewInvoiceModal = () => {
-   setIsNewInvoiceOpen(true);
-  };
+
+  const dashboardStats = buildDashboardStats(invoices);
 
   useEffect(() => {
     async function fetchInvoices() {
       try {
-        // Artificial delay so we can see the loading screen
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        const { data, error } = await supabase
+          .from("invoices")
+          .select(`
+            *,
+            customers (
+              company_name
+            )
+          `)
+          .order("invoice_number", { ascending: true });
 
-       const { data, error } = await supabase
-    .from("invoices")
-    .select(`
-        *,
-        customers (
-            company_name
-        )
-    `)
-    .order("invoice_number", { ascending: true });
-
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
         setInvoices(data ?? []);
       } catch (error) {
@@ -59,46 +52,35 @@ export default function Home() {
   }, []);
 
   if (loading) {
-    return <LoadingState message="Loading invoices..." />;
+    return <LoadingState message="Loading Digital Employee..." />;
   }
 
- {invoices.length === 0 && (
-  <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-gray-600">
-    No invoices yet. Upload one to get started.
-  </div>
-)}
-
   return (
-    <main className="p-8 space-y-6">
-      <Header name = "Accounts Receivable Dashboard" onNewInvoiceClick={openNewInvoiceModal} />
-      <div>
-        {isNewInvoiceOpen && (
-    <NewInvoiceModal
-        onClose={() => setIsNewInvoiceOpen(false)}
-    />
-)}
-      </div>
-      <div> 
-        <SearchBar
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        /> 
-      </div>
-      
+    <main className="min-h-screen bg-slate-50 px-8 py-8">
+      <div className="mx-auto max-w-7xl">
+        <Page>
+          <MissionControl stats={dashboardStats} />
 
-      <div>
-        <h2 className="text-2xl font-bold">
-          AI Accounts Receivable Employee
-        </h2>
+          <QuickActions />
 
-       </div>
+          <div className="grid grid-cols-12 gap-6">
+            <div className="col-span-4">
+              <MissionCard />
+            </div>
 
-      <div>
-        <h3 className="mb-4 text-xl font-semibold">
-          Recent Invoices
-        </h3>
+            <div className="col-span-8">
+              <DigitalEmployee />
+            </div>
+          </div>
 
-        <InvoiceList invoices={filteredInvoices} />
+          <ActivityTimeline />
+
+          {isNewInvoiceOpen && (
+            <NewInvoiceModal
+              onClose={() => setIsNewInvoiceOpen(false)}
+            />
+          )}
+        </Page>
       </div>
     </main>
   );
