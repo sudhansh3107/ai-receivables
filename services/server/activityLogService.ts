@@ -64,9 +64,13 @@ export async function logCustomerActivity(
     });
 }
 
-export async function getRecentActivity(
-    limit = 3
-) {
+export async function getRecentActivity(limit = 3) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
     const { data, error } = await supabase
         .from("activity_log")
         .select(`
@@ -78,14 +82,14 @@ export async function getRecentActivity(
                 company_name
             )
         `)
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString())
         .order("created_at", {
             ascending: false,
         })
         .limit(limit);
 
-    if (error) {
-        throw error;
-    }
+    if (error) throw error;
 
-    return data.map(mapActivityLog);;
+    return data.map(mapActivityLog);
 }

@@ -1,4 +1,4 @@
-import type { Invoice } from "../types/invoice";
+import type { Invoice } from "@/app/types/invoice";
 
 type InvoiceCardProps = {
   invoice: Invoice;

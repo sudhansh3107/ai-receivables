@@ -1,13 +1,20 @@
 "use client";
 
+import { useState } from "react";
+
 import Sidebar from "../sidebar/Sidebar";
 import TopBar from "./TopBar";
+
+import NewInvoiceModal from "../invoice/NewInvoiceModal";
 
 export default function AppShell({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const [showNewInvoiceModal, setShowNewInvoiceModal] =
+    useState(false);
+
   return (
     <div className="h-screen overflow-hidden bg-[#F8F5F2]">
 
@@ -24,7 +31,11 @@ export default function AppShell({
         {/* Fixed Top Bar */}
 
         <div className="sticky top-0 z-40">
-          <TopBar />
+          <TopBar
+            onAssignWork={() =>
+              setShowNewInvoiceModal(true)
+            }
+          />
         </div>
 
         {/* Scrollable Content */}
@@ -34,6 +45,14 @@ export default function AppShell({
         </main>
 
       </div>
+
+      {showNewInvoiceModal && (
+        <NewInvoiceModal
+          onClose={() =>
+            setShowNewInvoiceModal(false)
+          }
+        />
+      )}
 
     </div>
   );

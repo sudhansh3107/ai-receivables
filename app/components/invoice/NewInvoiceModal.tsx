@@ -2,7 +2,7 @@ import { useState } from "react";
 import ChooseMethod from "./ChooseMethod";
 import UploadInvoice from "./UploadInvoice";
 import ManualInvoice from "./ManualInvoice";
-import ModalHeader from "./ModalHeader";
+
 
 type Step = "choose" | "upload" | "manual";
 
@@ -16,7 +16,7 @@ export default function NewInvoiceModal({
     const [step, setStep] = useState<Step>("choose");
 
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className="w-full max-w-lg rounded-xl bg-white p-8 shadow-xl">
 
                 {step === "choose" && (

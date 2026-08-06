@@ -3,13 +3,20 @@
 import { motion } from "motion/react";
 import {
   Bell,
+  Plus,
   Search,
   Sparkles,
 } from "lucide-react";
 
 import Button from "../ui/Button";
 
-export default function TopBar() {
+type TopBarProps = {
+  onAssignWork: () => void;
+};
+
+export default function TopBar({
+  onAssignWork,
+}: TopBarProps) {
   return (
     <motion.header
       initial={{ opacity: 0, y: -6 }}
@@ -21,7 +28,7 @@ export default function TopBar() {
 
         {/* ROW 1 */}
 
-        <div className="flex items-center justify-end gap-7">
+        <div className="flex items-center justify-end gap-4">
 
           <button className="transition duration-200 hover:scale-105">
 
@@ -44,6 +51,24 @@ export default function TopBar() {
             </span>
 
           </button>
+
+          {/* Assign Work */}
+
+          <Button onClick={onAssignWork}>
+
+            <div className="flex items-center gap-2">
+
+              <Plus size={15} />
+
+              <span className="text-[14px] font-medium">
+                Assign Work
+              </span>
+
+            </div>
+
+          </Button>
+
+          {/* Ask Employee */}
 
           <Button>
 

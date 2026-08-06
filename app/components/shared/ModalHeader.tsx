@@ -1,39 +1,59 @@
 type ModalHeaderProps = {
     title: string;
+    subtitle?: string;
+
     onClose: () => void;
+
     showBack?: boolean;
     onBack?: () => void;
 };
 
 export default function ModalHeader({
     title,
+    subtitle,
     onClose,
     showBack = false,
     onBack,
-}: ModalHeaderProps) {
+}: ModalHeaderProps) 
+{
+    
     return (
-        <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+        <div className="mb-8 flex items-start justify-between">
+
+            <div className="flex items-start gap-3">
+
                 {showBack && (
                     <button
                         onClick={onBack}
-                        className="text-lg font-semibold hover:text-blue-600"
+                        className="mt-1 text-lg font-semibold transition hover:text-[#A47A45]"
                     >
                         ←
                     </button>
                 )}
 
-                <h2 className="text-2xl font-bold">
-                    {title}
-                </h2>
+                <div>
+
+                    <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#23201D]">
+                        {title}
+                    </h2>
+
+                    {subtitle && (
+                        <p className="mt-1 text-[14px] text-[#7D7D7D]">
+                            {subtitle}
+                        </p>
+                    )}
+
+                </div>
+
             </div>
 
             <button
                 onClick={onClose}
-                className="text-2xl hover:text-red-500"
+                className="text-2xl transition hover:text-[#A47A45]"
             >
                 ×
             </button>
+
         </div>
     );
 }
