@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "motion/react";
 import { LucideIcon, ChevronRight } from "lucide-react";
 
 interface DecisionItemProps {
@@ -21,7 +22,14 @@ export default function DecisionItem({
   subtitle,
 }: DecisionItemProps) {
   return (
-    <button
+    <motion.button
+      whileHover={{
+        y: -2,
+      }}
+      transition={{
+        duration: 0.25,
+        ease: [0.22, 1, 0.36, 1],
+      }}
       className="
         group
         flex
@@ -30,12 +38,14 @@ export default function DecisionItem({
         justify-between
         rounded-2xl
         border
-        border-[#EFE8E0]
+        border-[#ECE4DA]
         bg-[#FCFAF7]
-        p-4
+        p-5
         transition-all
-        duration-200
-        hover:bg-[#F8F4EE]
+        duration-300
+        hover:border-[#E1D4C5]
+        hover:bg-[#F9F6F2]
+        hover:shadow-[0_10px_28px_rgba(181,156,120,0.08)]
       "
     >
       {/* Left */}
@@ -44,32 +54,46 @@ export default function DecisionItem({
 
         {/* Icon */}
 
-        <div
-          className="flex h-11 w-11 items-center justify-center rounded-xl"
+        <motion.div
+          whileHover={{
+            scale: 1.05,
+          }}
+          transition={{
+            duration: 0.2,
+          }}
+          className="
+            flex
+            h-14
+            w-14
+            items-center
+            justify-center
+            rounded-2xl
+            shadow-[inset_0_1px_1px_rgba(255,255,255,0.45)]
+          "
           style={{
-            background: iconBackground,
+            background: `linear-gradient(180deg, #FFFFFF 0%, ${iconBackground} 100%)`,
           }}
         >
           <Icon
-            size={20}
+            size={22}
             strokeWidth={2}
             color={iconColor}
           />
-        </div>
+        </motion.div>
 
         {/* Text */}
 
         <div className="text-left">
 
-          <h3 className="text-[13px] font-semibold leading-6 text-[#1A1A1A]">
+          <h3 className="text-[13px] font-semibold leading-[18px] tracking-[-0.01em] text-[#1A1A1A]">
             {title}
           </h3>
 
-          <p className="text-[13px] font-semibold leading-6 text-[#1A1A1A]">
+          <p className="mt-1 text-[14px] font-semibold tracking-[-0.015em] text-[#1A1A1A]">
             {company}
           </p>
 
-          <span className="mt-2 block text-[12px] text-[#6B645C]">
+          <span className="mt-3 block text-[12px] leading-[16px] text-[#6B645C]">
             {subtitle}
           </span>
 
@@ -79,17 +103,26 @@ export default function DecisionItem({
 
       {/* Arrow */}
 
-      <ChevronRight
-        size={18}
-        strokeWidth={2}
-        className="
-          text-[#7D7D7D]
-          transition-transform
-          duration-200
-          group-hover:translate-x-1
-        "
-      />
+      <motion.div
+        whileHover={{
+          x: 3,
+        }}
+        transition={{
+          duration: 0.2,
+        }}
+      >
+        <ChevronRight
+          size={19}
+          strokeWidth={2}
+          className="
+            text-[#7D7D7D]
+            transition-colors
+            duration-300
+            group-hover:text-[#8F6B4A]
+          "
+        />
+      </motion.div>
 
-    </button>
+    </motion.button>
   );
 }

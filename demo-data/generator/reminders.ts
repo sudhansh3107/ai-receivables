@@ -1,10 +1,9 @@
+import { DEMO_CONFIG } from "./config";
 import {
   DemoInvoice,
   DemoPayment,
   DemoReminder,
 } from "./types";
-
-const DEMO_END_DATE = new Date("2026-08-04T23:59:59");
 
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
@@ -30,7 +29,7 @@ export function generateReminders(
 
     const stopDate = payment
       ? payment.payment_date
-      : DEMO_END_DATE;
+      : DEMO_CONFIG.END_DATE;
 
     const schedule = [
       addDays(invoice.due_date, -7),
@@ -62,13 +61,14 @@ export function generateReminders(
 
         delivery_status: "delivered",
 
-        response_received: payment
-          ? reminderDate >= payment.payment_date
-          : false,
+        response_received:
+          payment != null &&
+          reminderDate >= payment.payment_date,
       });
     }
 
-    // Continue reminders every 15 days until payment/demo end
+    // Continue reminders every 15 days
+    // until payment or demo end.
     let nextReminder = addDays(
       invoice.due_date,
       30
@@ -92,12 +92,15 @@ export function generateReminders(
 
         delivery_status: "delivered",
 
-        response_received: payment
-          ? nextReminder >= payment.payment_date
-          : false,
+        response_received:
+          payment != null &&
+          nextReminder >= payment.payment_date,
       });
 
-      nextReminder = addDays(nextReminder, 15);
+      nextReminder = addDays(
+        nextReminder,
+        15
+      );
     }
   }
 

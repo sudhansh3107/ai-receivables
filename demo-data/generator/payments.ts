@@ -13,7 +13,9 @@ function randomBetween(min: number, max: number): number {
 }
 
 function paymentReference(index: number): string {
-  return `PAY-2026-${String(index + 1).padStart(6, "0")}`;
+  return `PAY-${new Date().getFullYear()}-${String(
+    index + 1
+  ).padStart(6, "0")}`;
 }
 
 function addDays(date: Date, days: number): Date {

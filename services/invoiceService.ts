@@ -56,3 +56,134 @@ export async function createInvoice(
 
     return data;
 }
+
+export async function getOutstandingAmount(): Promise<number> {
+    const { data, error } = await supabase
+        .from("invoices")
+        .select("balance_due")
+        .in("status", [
+            "pending",
+            "partial",
+            "overdue",
+        ]);
+
+    if (error) {
+        throw error;
+    }
+
+    return data.reduce(
+        (sum, invoice) =>
+            sum + Number(invoice.balance_due),
+        0
+    );
+}
+
+export async function getOverdueInvoiceCount(): Promise<number> {
+    const { count, error } = await supabase
+        .from("invoices")
+        .select("*", {
+            head: true,
+            count: "exact",
+        })
+        .eq("status", "overdue");
+
+    if (error) {
+        throw error;
+    }
+
+    return count ?? 0;
+}
+
+export async function getInvoicesNeedingReview(): Promise<number> {
+    const { count, error } = await supabase
+        .from("invoices")
+        .select("*", {
+            head: true,
+            count: "exact",
+        })
+        .eq(
+            "invoice_confidence_level",
+            "low"
+        );
+
+    if (error) {
+        throw error;
+    }
+
+    return count ?? 0;
+}
+
+import { toLocalDateString } from "@/lib/date";
+
+export async function getOutstandingLastMonth(): Promise<number> {
+    const today = new Date();
+
+    const lastMonthStart = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        1
+    );
+
+    const lastMonthSameDay = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        today.getDate()
+    );
+
+    const { data, error } = await supabase
+        .from("invoices")
+        .select("balance_due")
+        .gte(
+            "invoice_date",
+            toLocalDateString(lastMonthStart)
+        )
+        .lte(
+            "invoice_date",
+            toLocalDateString(lastMonthSameDay)
+        )
+        .gt("balance_due", 0);
+
+    if (error) throw error;
+
+    return data.reduce(
+        (sum, invoice) =>
+            sum + Number(invoice.balance_due),
+        0
+    );
+}
+
+export async function getOverdueInvoiceCountLastMonth(): Promise<number> {
+    const today = new Date();
+
+    const lastMonthStart = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        1
+    );
+
+    const lastMonthSameDay = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        today.getDate()
+    );
+
+    const { count, error } = await supabase
+        .from("invoices")
+        .select("*", {
+            count: "exact",
+            head: true,
+        })
+        .eq("status", "overdue")
+        .gte(
+            "invoice_date",
+            toLocalDateString(lastMonthStart)
+        )
+        .lte(
+            "invoice_date",
+            toLocalDateString(lastMonthSameDay)
+        );
+
+    if (error) throw error;
+
+    return count ?? 0;
+}

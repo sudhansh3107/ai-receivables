@@ -8,6 +8,26 @@
  * ==========================================================
  */
 
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+const MONTHS_OF_HISTORY = 4;
+
+const END_DATE = new Date();
+
+const START_DATE = new Date(END_DATE);
+
+// Start from the first day of the oldest month
+START_DATE.setDate(1);
+
+// Include the current month in the rolling window
+START_DATE.setMonth(
+  START_DATE.getMonth() - (MONTHS_OF_HISTORY - 1)
+);
+
 export const DEMO_CONFIG = {
   // ========================================================
   // Company
@@ -25,9 +45,11 @@ export const DEMO_CONFIG = {
   // Demo Timeline
   // ========================================================
 
-  START_DATE: new Date("2026-05-01"),
+  START_DATE,
 
-  END_DATE: new Date("2026-08-04"),
+  END_DATE,
+
+  MONTHS_OF_HISTORY,
 
   // ========================================================
   // Dataset Size
@@ -39,18 +61,20 @@ export const DEMO_CONFIG = {
 
   // ========================================================
   // Invoice Distribution
+  // Distribution across the rolling timeline.
+  // Index 0 = Oldest Month
+  // Index 3 = Current Month
   // ========================================================
 
-  MAY_INVOICES: 40,
-
-  JUNE_INVOICES: 50,
-
-  JULY_INVOICES: 40,
-
-  AUGUST_INVOICES: 20,
+  MONTHLY_DISTRIBUTION: [
+    40,
+    50,
+    40,
+    20,
+  ],
 
   // ========================================================
-  // Current Invoice Status
+  // Current Invoice Status (Target Distribution)
   // ========================================================
 
   PAID_INVOICES: 125,

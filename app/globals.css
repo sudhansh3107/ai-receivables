@@ -25,3 +25,122 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ==========================================================
+   Employee Status Indicator
+========================================================== */
+
+.employee-indicator {
+  position: relative;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 26px;
+  height: 26px;
+
+  margin-left: 10px;
+
+  transform: translateY(2px);
+
+  overflow: visible;
+}
+
+/* Expanding warm pulse */
+
+.employee-indicator-pulse {
+  position: absolute;
+
+  width: 12px;
+  height: 12px;
+
+  border-radius: 9999px;
+
+  background: rgba(213, 171, 92, 0.55);
+
+  animation: employeePulse 2.8s
+    cubic-bezier(.22,1,.36,1)
+    infinite;
+}
+
+/* Center dot */
+
+.employee-indicator-dot {
+  position: relative;
+
+  width: 12px;
+  height: 12px;
+
+  border-radius: 9999px;
+
+  background: linear-gradient(
+    180deg,
+    #D9AE67 0%,
+    #B88945 100%
+  );
+
+  box-shadow:
+    0 0 14px rgba(184,137,69,.55),
+    inset 0 1px 1px rgba(255,255,255,.45);
+
+  animation: employeeCore 2.8s ease-in-out infinite;
+}
+
+/* Breathing center */
+
+@keyframes employeeCore {
+
+  0%,100% {
+
+    filter: brightness(1);
+
+  }
+
+  50% {
+
+    filter: brightness(1.22);
+
+  }
+
+}
+
+/* Expanding pulse */
+
+@keyframes employeePulse {
+
+  0% {
+
+    transform: scale(1);
+
+    opacity: .75;
+
+  }
+
+  70% {
+
+    transform: scale(3.3);
+
+    opacity: 0;
+
+  }
+
+  100% {
+
+    transform: scale(3.3);
+
+    opacity: 0;
+
+  }
+
+}
+
+/* ==========================================================
+   Dashboard Cards
+========================================================== */
+
+.dashboard-card {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}

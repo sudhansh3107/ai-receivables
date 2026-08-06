@@ -19,7 +19,7 @@ export default function DecisionFeed() {
       className="h-full"
     >
       <Card
-        className="flex h-[400px] flex-col rounded-[30px] p-0"
+        className="flex h-[410px] flex-col rounded-[30px] p-0"
         style={{
           background: "#FFFFFF",
           border: "1px solid #E6DED4",

@@ -14,15 +14,23 @@ export default function HeroContent() {
 
       {/* Heading */}
 
-      <h1
+     <h1
   className={`${cormorant.className} mt-10 w-[420px] text-[58px] font-medium leading-[58px] tracking-[-0.035em] text-[#1C1C1C]`}
 >
   <span className="whitespace-nowrap">
     Your AR Employee
   </span>
+
   <br />
-  is working 
-  <span className="text-[#B88A4B]">.</span>
+
+  <span className="inline-flex items-center">
+    is working
+
+    <span className="employee-indicator">
+      <span className="employee-indicator-pulse" />
+      <span className="employee-indicator-dot" />
+    </span>
+  </span>
 </h1>
 
       {/* Description */}

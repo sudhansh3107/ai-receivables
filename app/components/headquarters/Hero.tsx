@@ -22,10 +22,11 @@ export default function Hero() {
         </div>
 
         {/* Right Metrics */}
-
-        <div className="flex flex-1 items-end">
-          <MetricsPanel />
-        </div>
+<div className="flex flex-1 items-end">
+  <div className="w-full">
+    <MetricsPanel />
+  </div>
+</div>
 
       </div>
     </motion.section>

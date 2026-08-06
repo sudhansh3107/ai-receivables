@@ -2,8 +2,9 @@ import { supabase } from "@/lib/supabase";
 import { logInvoiceActivity } from "./activityLogService";
 import { ActivityTypes } from "@/lib/activityTypes";
 import { InvoiceStatus, type InvoiceStatusType } from "@/lib/invoiceStatus";
-
 import { type PaymentMethodType } from "@/lib/paymentMethods";
+import { toLocalDateString } from "@/lib/date";
+
 
 export interface RecordPaymentInput {
     invoiceId: string;
@@ -95,71 +96,177 @@ export async function recordPayment(
     input: RecordPaymentInput
 ) {
     const { data: payment, error } = await supabase
-    .from("payments")
-    .insert({
-        invoice_id: input.invoiceId,
-        customer_id: input.customerId,
+        .from("payments")
+        .insert({
+            invoice_id: input.invoiceId,
+            customer_id: input.customerId,
 
-        amount: input.amount,
+            amount: input.amount,
 
-        payment_date: input.paymentDate.toISOString(),
+            payment_date: input.paymentDate.toISOString(),
 
-        payment_method: input.paymentMethod,
+            payment_method: input.paymentMethod,
 
-        payment_reference: input.paymentReference,
+            payment_reference: input.paymentReference,
 
-        notes: input.notes,
-    })
-    .select()
-    .single();
+            notes: input.notes,
+        })
+        .select()
+        .single();
 
     if (error) {
-    throw error;
-}
+        throw error;
+    }
+
     const invoice = await getInvoice(input.invoiceId);
+
     const totalPaid = await getTotalPayments(
-    input.invoiceId
+        input.invoiceId
     );
-    
+
     const {
-    balanceDue,
-    status,
+        balanceDue,
+        status,
     } = calculateInvoiceBalance(
-    Number(invoice.invoice_amount),
-    totalPaid
+        Number(invoice.invoice_amount),
+        totalPaid
     );
-    
+
     await updateInvoice(
-    input.invoiceId,
-    balanceDue,
-    status
-);
-
-const metadata = {
-    paymentAmount: input.amount,
-    paymentMethod: input.paymentMethod,
-    remainingBalance: balanceDue,
-};
-
-if (status === InvoiceStatus.PAID) {
-    await logInvoiceActivity(
         input.invoiceId,
-        input.customerId,
-        ActivityTypes.INVOICE_PAID,
-        `Invoice ${invoice.invoice_number} paid in full`,
-        metadata
+        balanceDue,
+        status
     );
-} else {
-    await logInvoiceActivity(
-        input.invoiceId,
-        input.customerId,
-        ActivityTypes.PAYMENT_RECORDED,
-        `Payment of ${input.amount} recorded`,
-        metadata
-    );
+
+    const metadata = {
+        paymentAmount: input.amount,
+        paymentMethod: input.paymentMethod,
+        remainingBalance: balanceDue,
+    };
+
+    if (status === InvoiceStatus.PAID) {
+        await logInvoiceActivity(
+            input.invoiceId,
+            input.customerId,
+            ActivityTypes.INVOICE_PAID,
+            `Invoice ${invoice.invoice_number} paid in full`,
+            metadata
+        );
+    } else {
+        await logInvoiceActivity(
+            input.invoiceId,
+            input.customerId,
+            ActivityTypes.PAYMENT_RECORDED,
+            `Payment of ${input.amount} recorded`,
+            metadata
+        );
+    }
+
+    return payment;
 }
 
-return payment;
-   
+/* ---------------------------------------------------------- */
+/* Dashboard Metrics Helpers */
+/* ---------------------------------------------------------- */
 
+function getMonthRange(monthOffset = 0) {
+    const today = new Date();
+
+    const start = new Date(
+        today.getFullYear(),
+        today.getMonth() + monthOffset,
+        1
+    );
+
+    const end = new Date(
+        today.getFullYear(),
+        today.getMonth() + monthOffset + 1,
+        1
+    );
+
+    return {
+        start,
+        end,
+    };
+}
+
+export async function getRecoveredThisMonth(): Promise<number> {
+    const today = new Date();
+
+    const start = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        1
+    );
+
+    const startDate = `${start.getFullYear()}-${String(
+        start.getMonth() + 1
+    ).padStart(2, "0")}-${String(
+        start.getDate()
+    ).padStart(2, "0")}`;
+
+    const todayDate = `${today.getFullYear()}-${String(
+        today.getMonth() + 1
+    ).padStart(2, "0")}-${String(
+        today.getDate()
+    ).padStart(2, "0")}`;
+
+    const { data, error } = await supabase
+        .from("payments")
+        .select("payment_date, amount")
+        .gte("payment_date", startDate)
+        .lte("payment_date", todayDate);
+
+    if (error) throw error;
+
+    console.table(data);
+
+    const total = data.reduce(
+        (sum, p) => sum + Number(p.amount),
+        0
+    );
+
+    console.log("RecoveredThisMonth =", total);
+
+    return total;
+}
+
+export async function getRecoveredLastMonth(): Promise<number> {
+    const today = new Date();
+
+    const startOfLastMonth = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        1
+    );
+
+    const sameDayLastMonth = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        today.getDate()
+    );
+
+    const startDate = toLocalDateString(
+        startOfLastMonth
+    );
+
+    const endDate = toLocalDateString(
+        sameDayLastMonth
+    );
+
+    const { data, error } = await supabase
+        .from("payments")
+        .select("amount")
+        .gte("payment_date", startDate)
+        .lte("payment_date", endDate);
+
+    if (error) {
+        throw error;
+    }
+
+    return data.reduce(
+        (sum, payment) =>
+            sum + Number(payment.amount),
+        0
+    );
 }

@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { ActivityType } from "@/lib/activityTypes";
+import { mapActivityLog } from "./activityMapper";
 
 export interface ActivityLogInput {
     invoiceId?: string;
@@ -61,4 +62,30 @@ export async function logCustomerActivity(
         description,
         metadata,
     });
+}
+
+export async function getRecentActivity(
+    limit = 3
+) {
+    const { data, error } = await supabase
+        .from("activity_log")
+        .select(`
+            *,
+            invoices (
+                invoice_number
+            ),
+            customers (
+                company_name
+            )
+        `)
+        .order("created_at", {
+            ascending: false,
+        })
+        .limit(limit);
+
+    if (error) {
+        throw error;
+    }
+
+    return data.map(mapActivityLog);;
 }

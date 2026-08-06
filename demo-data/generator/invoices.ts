@@ -2,7 +2,7 @@ import { DEMO_CONFIG } from "./config";
 import { DemoClient, DemoInvoice } from "./types";
 
 function generateInvoiceNumber(index: number): string {
-  return `IBA-2026-${String(index + 1).padStart(4, "0")}`;
+  return `IBA-${new Date().getFullYear()}-${String(index + 1).padStart(4, "0")}`;
 }
 
 function randomDate(start: Date, end: Date): Date {
@@ -15,16 +15,31 @@ function randomDate(start: Date, end: Date): Date {
 }
 
 function randomDateInMonth(
-  year: number,
-  month: number
+  monthOffset: number
 ): Date {
-  const start = new Date(year, month, 1);
+  const start = new Date(DEMO_CONFIG.START_DATE);
 
-  const end = new Date(year, month + 1, 0);
+  start.setMonth(start.getMonth() + monthOffset);
+  start.setDate(1);
+
+  const end = new Date(start);
+
+  end.setMonth(end.getMonth() + 1);
+  end.setDate(0);
+
+  const today = new Date(DEMO_CONFIG.END_DATE);
+
+  // If this is the current month,
+  // only generate invoices up to today.
+  if (
+    start.getFullYear() === today.getFullYear() &&
+    start.getMonth() === today.getMonth()
+  ) {
+    return randomDate(start, today);
+  }
 
   return randomDate(start, end);
 }
-
 
 function calculateDueDate(
   invoiceDate: Date,
@@ -52,39 +67,12 @@ function generateInvoiceAmount(
   );
 }
 
-function invoiceCountForClient(
-  client: DemoClient
-): number {
-  switch (client.profile.category) {
-    case "Corporate":
-      return 9;
-
-    case "University":
-      return 7;
-
-    case "College":
-      return 5;
-
-    case "Training Partner":
-      return 4;
-
-    case "Government":
-      return 3;
-
-    case "Startup":
-      return 2;
-
-    default:
-      return 5;
-  }
-}
-
 export function generateInvoices(
   clients: DemoClient[]
 ): DemoInvoice[] {
   const invoices: DemoInvoice[] = [];
 
-  // Build a weighted client pool
+  // Build weighted client pool
   const clientPool: DemoClient[] = [];
 
   for (const client of clients) {
@@ -121,81 +109,88 @@ export function generateInvoices(
     }
   }
 
-  // Generate exactly TOTAL_INVOICES
-  const monthlyDistribution = [
-  { month: 4, count: DEMO_CONFIG.MAY_INVOICES },     // May
-  { month: 5, count: DEMO_CONFIG.JUNE_INVOICES },    // June
-  { month: 6, count: DEMO_CONFIG.JULY_INVOICES },    // July
-  { month: 7, count: DEMO_CONFIG.AUGUST_INVOICES },  // August
-];
-
-for (const { month, count } of monthlyDistribution) {
-  for (let i = 0; i < count; i++) {
-    const client =
-      clientPool[
-        Math.floor(Math.random() * clientPool.length)
-      ];
-
-    const invoiceDate = randomDateInMonth(
-      2026,
-      month
+  const monthlyDistribution =
+    DEMO_CONFIG.MONTHLY_DISTRIBUTION.map(
+      (count, monthOffset) => ({
+        monthOffset,
+        count,
+      })
     );
 
-    const invoiceAmount = generateInvoiceAmount(
-      client.profile.averageInvoice
-    );
+  for (const {
+    monthOffset,
+    count,
+  } of monthlyDistribution) {
+    for (let i = 0; i < count; i++) {
+      const client =
+        clientPool[
+          Math.floor(
+            Math.random() *
+              clientPool.length
+          )
+        ];
 
-    invoices.push({
-      id: crypto.randomUUID(),
-      
-      customer_id: client.customer.id,
+      const invoiceDate =
+        randomDateInMonth(monthOffset);
 
-      upload_session_id: null,
+      const invoiceAmount =
+        generateInvoiceAmount(
+          client.profile.averageInvoice
+        );
 
-      invoice_number: "",
+      invoices.push({
+        id: crypto.randomUUID(),
 
-      invoice_date: invoiceDate,
+        customer_id: client.customer.id,
 
-      due_date: calculateDueDate(
-        invoiceDate,
-        client.profile.paymentTerms
-      ),
+        upload_session_id: null,
 
-      currency: "INR",
+        invoice_number: "",
 
-      invoice_amount: invoiceAmount,
+        invoice_date: invoiceDate,
 
-      balance_due: invoiceAmount,
+        due_date: calculateDueDate(
+          invoiceDate,
+          client.profile.paymentTerms
+        ),
 
-      status: "pending",
+        currency: DEMO_CONFIG.CURRENCY,
 
-      source_type: "upload",
+        invoice_amount: invoiceAmount,
 
-      invoice_confidence_score: 98.5,
+        balance_due: invoiceAmount,
 
-      invoice_confidence_level: "high",
+        status: "pending",
 
-      invoice_confidence_reasons: [
-        "High OCR confidence",
-        "Business rules validated",
-        "Vendor matched successfully",
-      ],
+        source_type: "upload",
 
-      payment_terms: client.profile.paymentTerms,
-    });
+        invoice_confidence_score: 98.5,
+
+        invoice_confidence_level: "high",
+
+        invoice_confidence_reasons: [
+          "High OCR confidence",
+          "Business rules validated",
+          "Vendor matched successfully",
+        ],
+
+        payment_terms:
+          client.profile.paymentTerms,
+      });
+    }
   }
-}
 
-  // Sort invoices chronologically
+  // Sort chronologically
   invoices.sort(
     (a, b) =>
       a.invoice_date.getTime() -
       b.invoice_date.getTime()
   );
 
-  // Assign sequential invoice numbers AFTER sorting
+  // Assign invoice numbers
   invoices.forEach((invoice, index) => {
-    invoice.invoice_number = generateInvoiceNumber(index);
+    invoice.invoice_number =
+      generateInvoiceNumber(index);
   });
 
   return invoices;

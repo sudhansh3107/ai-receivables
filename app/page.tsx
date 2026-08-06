@@ -16,7 +16,7 @@ export default function Home() {
 
         <Hero />
 
-        <div className="mt-10 grid grid-cols-12 gap-8">
+        <div className="mt-5 grid grid-cols-12 gap-8">
 
           {/* Left */}
 
