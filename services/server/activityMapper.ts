@@ -243,6 +243,26 @@ export function mapActivityLog(
             status: "Waiting",
         };
 
+        case ActivityTypes.CUSTOMER_INSIGHTS_UPDATED:
+
+    return {
+        id: activity.id,
+        time: formatTime(activity.created_at),
+
+        icon: "warning",
+
+        title: "Payment behavior reassessed",
+
+        subtitle:
+            `${activity.metadata?.riskLevel ?? "Unknown"} risk · ` +
+            `${activity.metadata?.paymentConfidence ?? 0}% confidence · ` +
+            `₹${Number(
+                activity.metadata?.currentOutstandingAmount ?? 0
+            ).toLocaleString("en-IN")} outstanding`,
+
+        status: "Completed",
+    };
+
     default:
 
         return {

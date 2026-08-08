@@ -15,6 +15,8 @@ export const ActivityTypes = {
     INVOICE_PAID: "invoice_paid",
     INVOICE_PARTIALLY_PAID: "invoice_partially_paid",
     INVOICE_OVERDUE: "invoice_overdue",
+    CUSTOMER_INSIGHTS_UPDATED: "customer_insights_updated",
+
 } as const;
 
 export type ActivityType =

@@ -4,6 +4,9 @@ import { ActivityTypes } from "@/lib/activityTypes";
 import { InvoiceStatus, type InvoiceStatusType } from "@/lib/invoiceStatus";
 import { type PaymentMethodType } from "@/lib/paymentMethods";
 import { toLocalDateString } from "@/lib/date";
+import {
+    refreshCustomerInsights,
+} from "./customerInsightService";
 
 
 export interface RecordPaymentInput {
@@ -139,30 +142,38 @@ export async function recordPayment(
     );
 
     const metadata = {
-        paymentAmount: input.amount,
+        amount: input.amount,
         paymentMethod: input.paymentMethod,
         remainingBalance: balanceDue,
     };
 
     if (status === InvoiceStatus.PAID) {
-        await logInvoiceActivity(
-            input.invoiceId,
-            input.customerId,
-            ActivityTypes.INVOICE_PAID,
-            `Invoice ${invoice.invoice_number} paid in full`,
-            metadata
-        );
-    } else {
-        await logInvoiceActivity(
-            input.invoiceId,
-            input.customerId,
-            ActivityTypes.PAYMENT_RECORDED,
-            `Payment of ${input.amount} recorded`,
-            metadata
-        );
-    }
+    await logInvoiceActivity(
+        input.invoiceId,
+        input.customerId,
+        ActivityTypes.INVOICE_PAID,
+        `Invoice ${invoice.invoice_number} paid in full`,
+        metadata
+    );
+} else {
+    await logInvoiceActivity(
+        input.invoiceId,
+        input.customerId,
+        ActivityTypes.PAYMENT_RECORDED,
+        `Payment of ${input.amount} recorded`,
+        metadata
+    );
+}
 
-    return payment;
+console.log("🧠 Refreshing Customer Insights...");
+
+await refreshCustomerInsights(
+    input.customerId
+);
+
+console.log("🧠 Customer Insights Updated");
+
+return payment;
 }
 
 /* ---------------------------------------------------------- */

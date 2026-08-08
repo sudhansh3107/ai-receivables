@@ -9,6 +9,9 @@ import { logInvoiceActivity } from "./server/activityLogService";
 import { ActivityTypes } from "@/lib/activityTypes";
 import { scheduleReminder } from "./server/reminderService";
 import { ReminderStages } from "@/lib/reminderStages";
+import {
+    refreshCustomerInsights,
+} from "./server/customerInsightService";
 
 export async function processInvoice(invoiceFileId: string) {
 
@@ -89,6 +92,16 @@ export async function processInvoice(invoiceFileId: string) {
 
         console.log("📄 Invoice");
         console.log(invoice);
+
+        console.log("🧠 Refreshing Customer Insights...");
+
+await refreshCustomerInsights(
+    customer.id
+    
+);
+
+console.log("🧠 Customer Insights Updated");
+
 
         await logInvoiceActivity(
         invoice.id,

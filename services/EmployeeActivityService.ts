@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 
 export interface EmployeeActivityInput {
-    uploadSessionId: string;
+    uploadSessionId?: string;
     invoiceFileId?: string;
 
     activityType: string;
@@ -14,7 +14,7 @@ export async function logEmployeeActivity(
     const { data, error } = await supabase
         .from("employee_activity")
         .insert({
-            upload_session_id: input.uploadSessionId,
+            upload_session_id: input.uploadSessionId ?? null,
             invoice_file_id: input.invoiceFileId ?? null,
 
             activity_type: input.activityType,
@@ -42,7 +42,9 @@ export async function getEmployeeActivity(
                 file_name
             )
         `)
-        .eq("upload_session_id", uploadSessionId)
+        .or(
+    `upload_session_id.eq.${uploadSessionId},upload_session_id.is.null`
+)
         .order("created_at", {
             ascending: false,
         })
@@ -51,6 +53,11 @@ export async function getEmployeeActivity(
     if (error) {
         throw error;
     }
+
+    console.log(
+    "🔎 Employee Activity Query Result:",
+    data
+);
 
     return data;
 }

@@ -3,7 +3,7 @@ import { ActivityType } from "@/lib/activityTypes";
 import { mapActivityLog } from "./activityMapper";
 
 export interface ActivityLogInput {
-    invoiceId?: string;
+    invoiceId?: string | null;
     customerId?: string;
 
     activityType: ActivityType;
@@ -35,7 +35,7 @@ export async function logActivity(
 }
 
 export async function logInvoiceActivity(
-    invoiceId: string,
+    invoiceId: string | null,
     customerId: string,
     activityType: ActivityType,
     description: string,
