@@ -251,15 +251,26 @@ export function mapActivityLog(
 
         icon: "warning",
 
-        title: "Payment behavior reassessed",
+        title: `Behavior reassessed for ${
+    activity.customers?.company_name ?? "Customer"
+}`,
 
         subtitle:
-            `${activity.metadata?.riskLevel ?? "Unknown"} risk · ` +
-            `${activity.metadata?.paymentConfidence ?? 0}% confidence · ` +
-            `₹${Number(
-                activity.metadata?.currentOutstandingAmount ?? 0
-            ).toLocaleString("en-IN")} outstanding`,
-
+    `${
+        activity.metadata?.riskLevel === "limited_history"
+            ? "Limited history"
+            : activity.metadata?.riskLevel === "high"
+            ? "High risk"
+            : activity.metadata?.riskLevel === "medium"
+            ? "Medium risk"
+            : activity.metadata?.riskLevel === "low"
+            ? "Low risk"
+            : "Unknown"
+    } · ` +
+    `${activity.metadata?.paymentConfidence ?? 0}% confidence · ` +
+    `₹${Number(
+        activity.metadata?.currentOutstandingAmount ?? 0
+    ).toLocaleString("en-IN")} outstanding`,
         status: "Completed",
     };
 
