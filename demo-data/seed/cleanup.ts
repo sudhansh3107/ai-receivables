@@ -8,8 +8,11 @@ export async function cleanupDatabase() {
     "activity_log",
     "reminders",
     "payments",
+    "invoice_files",
     "invoices",
+    "upload_sessions",
     "customers",
+    "employee_activity",
   ];
 
   for (const table of tables) {
@@ -20,8 +23,8 @@ export async function cleanupDatabase() {
 
     throwIfError(error);
 
-    console.log(`🗑 Cleared ${table}`);
+    console.log(`🗑️ Cleared ${table}`);
   }
 
-  console.log();
+  console.log("\n✅ Database cleanup complete.\n");
 }
