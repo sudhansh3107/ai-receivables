@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { ExtractedInvoice } from "./server/invoiceExtractionService";
 import { InvoiceConfidenceResult } from "./server/invoiceConfidenceService";
+import { toLocalDateString } from "@/lib/date";
+import { OVERDUE_INVOICE_STATUSES } from "@/lib/invoiceOverdue";
 
 export async function findExistingInvoice(
     customerId: string,
@@ -78,79 +80,102 @@ export async function getOutstandingAmount(): Promise<number> {
     );
 }
 
-export async function getOverdueInvoiceCount(): Promise<number> {
-    const { count, error } = await supabase
-        .from("invoices")
-        .select("*", {
-            head: true,
-            count: "exact",
-        })
-        .eq("status", "overdue");
-
-    if (error) {
-        throw error;
-    }
-
-    return count ?? 0;
+export interface OverdueInvoicesSummary {
+    count: number;
+    amount: number;
 }
 
-export async function getInvoicesNeedingReview(): Promise<number> {
-    const { count, error } = await supabase
+// Authoritative overdue calculation, reused by the dashboard metric,
+// Mission, and Decision Activity. See lib/invoiceOverdue.ts for why
+// this is derived from due_date rather than the (never-written)
+// "overdue" status value.
+export async function getOverdueInvoicesSummary(): Promise<OverdueInvoicesSummary> {
+    const today = toLocalDateString(new Date());
+
+    const { data, error } = await supabase
         .from("invoices")
-        .select("*", {
-            head: true,
-            count: "exact",
-        })
-        .eq(
-            "invoice_confidence_level",
-            "low"
-        );
+        .select("balance_due")
+        .in("status", OVERDUE_INVOICE_STATUSES)
+        .lt("due_date", today);
 
     if (error) {
         throw error;
     }
 
-    return count ?? 0;
+    return {
+        count: data.length,
+        amount: data.reduce(
+            (sum, invoice) =>
+                sum + Number(invoice.balance_due),
+            0
+        ),
+    };
+}
+
+export async function getOverdueInvoiceCount(): Promise<number> {
+    const summary = await getOverdueInvoicesSummary();
+    return summary.count;
 }
 
 export interface InvoiceNeedingReview {
     id: string;
     invoiceNumber: string;
+    customerId: string;
     customerName: string;
     amount: number;
     currency: string;
     confidenceReasons: string[] | null;
+    createdAt: string;
 }
 
 interface InvoiceNeedingReviewRow {
     id: string;
     invoice_number: string;
+    customer_id: string;
     invoice_amount: number;
     currency: string;
     invoice_confidence_reasons: string[] | null;
+    created_at: string;
     customers: { company_name: string } | null;
 }
 
+// The single source of unreviewed low-confidence invoices, used both
+// by the Metrics "Needs Review" count (via
+// getUnreviewedLowConfidenceInvoiceCount below) and by the Decision
+// queue's ranking input. Excludes invoices a human has already
+// reviewed — invoice_confidence_score/level/reasons are untouched;
+// only confidence_reviewed_at (a separate, human-only field) drives
+// this filter. Pass no `limit` to fetch the full candidate set (the
+// Decision queue must rank against everything, not a pre-truncated
+// slice).
 export async function getInvoicesNeedingReviewDetails(
-    limit = 5
+    limit?: number
 ): Promise<InvoiceNeedingReview[]> {
-    const { data, error } = await supabase
+    let query = supabase
         .from("invoices")
         .select(
             `
             id,
             invoice_number,
+            customer_id,
             invoice_amount,
             currency,
             invoice_confidence_reasons,
+            created_at,
             customers (
                 company_name
             )
         `
         )
         .eq("invoice_confidence_level", "low")
-        .order("created_at", { ascending: false })
-        .limit(limit);
+        .is("confidence_reviewed_at", null)
+        .order("created_at", { ascending: false });
+
+    if (limit !== undefined) {
+        query = query.limit(limit);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
         throw error;
@@ -161,15 +186,73 @@ export async function getInvoicesNeedingReviewDetails(
     return rows.map((invoice) => ({
         id: invoice.id,
         invoiceNumber: invoice.invoice_number,
+        customerId: invoice.customer_id,
         customerName:
             invoice.customers?.company_name ?? "Unknown customer",
         amount: Number(invoice.invoice_amount),
         currency: invoice.currency,
         confidenceReasons: invoice.invoice_confidence_reasons,
+        createdAt: invoice.created_at,
     }));
 }
 
-import { toLocalDateString } from "@/lib/date";
+export async function getUnreviewedLowConfidenceInvoiceCount(): Promise<number> {
+    const { count, error } = await supabase
+        .from("invoices")
+        .select("*", {
+            head: true,
+            count: "exact",
+        })
+        .eq("invoice_confidence_level", "low")
+        .is("confidence_reviewed_at", null);
+
+    if (error) {
+        throw error;
+    }
+
+    return count ?? 0;
+}
+
+// Explicit human action evidence. Deliberately does not read or
+// write invoice_confidence_score/level/reasons — those remain
+// AI-only extraction signals.
+export async function markInvoiceReviewed(
+    invoiceId: string
+): Promise<void> {
+    const { error } = await supabase
+        .from("invoices")
+        .update({
+            confidence_reviewed_at: new Date().toISOString(),
+        })
+        .eq("id", invoiceId);
+
+    if (error) {
+        throw error;
+    }
+}
+
+export async function getInvoiceReviewsCompletedTodayCount(): Promise<number> {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const { count, error } = await supabase
+        .from("invoices")
+        .select("*", {
+            head: true,
+            count: "exact",
+        })
+        .gte("confidence_reviewed_at", start.toISOString())
+        .lte("confidence_reviewed_at", end.toISOString());
+
+    if (error) {
+        throw error;
+    }
+
+    return count ?? 0;
+}
 
 export interface UploadSessionConfidenceBreakdown {
     needsReview: number;

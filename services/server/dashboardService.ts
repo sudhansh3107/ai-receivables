@@ -3,9 +3,8 @@ import {
     getOutstandingLastMonth,
     getOverdueInvoiceCount,
     getOverdueInvoiceCountLastMonth,
-    getInvoicesNeedingReview,
-    getInvoicesNeedingReviewDetails,
-    InvoiceNeedingReview,
+    getUnreviewedLowConfidenceInvoiceCount,
+    getInvoiceReviewsCompletedTodayCount,
 } from "@/services/invoiceService";
 
 import {
@@ -22,12 +21,19 @@ import {
 } from "./activityMapper";
 
 import {
-    getLatestCustomerInsight,
+    getMostUrgentCustomerInsight,
 } from "./customerInsightService";
 
 import {
     getNextReminderForCustomer,
+    getRemindersNeedingAttentionCount,
+    getReminderFollowUpsActionedTodayCount,
 } from "./reminderService";
+
+import {
+    getDecisionQueue,
+    DecisionQueue,
+} from "./decisionService";
 
 export interface Metric {
     value: number;
@@ -44,7 +50,7 @@ export interface DashboardMetrics {
         difference: number;
     };
 
-    needsApproval: number;
+    needsReview: number;
 }
 
 export interface DashboardInsight {
@@ -57,16 +63,30 @@ export interface DashboardInsight {
     updatedAt: string;
 }
 
+// Mission = today's explicit actionable AR work, completed vs. still
+// relevant — not invoice status, not payment activity, not a
+// financial rollup (that's MetricsPanel). completedToday only ever
+// reflects explicit human action evidence (reminders.actioned_at /
+// invoices.confidence_reviewed_at) — never inferred from payments or
+// activity_log events.
+export interface MissionSummary {
+    completedToday: number;
+
+    remainingToday: number;
+    remainingFollowUps: number;
+    remainingReviews: number;
+}
+
 export interface DashboardData {
     metrics: DashboardMetrics;
 
     activity: EmployeeActivity[];
 
-    approvals: InvoiceNeedingReview[];
+    decisionQueue: DecisionQueue;
 
     insight: DashboardInsight | null;
 
-    mission: unknown | null;
+    mission: MissionSummary | null;
 }
 
 function calculatePercentageChange(
@@ -92,7 +112,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     overdueInvoices,
     overdueInvoicesLastMonth,
 
-    needsApproval,
+    needsReview,
 ] = await Promise.all([
     getRecoveredThisMonth(),
     getRecoveredLastMonth(),
@@ -103,7 +123,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     getOverdueInvoiceCount(),
     getOverdueInvoiceCountLastMonth(),
 
-    getInvoicesNeedingReview(),
+    getUnreviewedLowConfidenceInvoiceCount(),
 ]);
 
     return {
@@ -133,7 +153,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
         overdueInvoicesLastMonth,
         },
 
-        needsApproval,
+        needsReview,
     };
 }
 
@@ -153,20 +173,20 @@ function formatNextAction(
 }
 
 async function getDashboardInsight(): Promise<DashboardInsight | null> {
-    const latestInsight = await getLatestCustomerInsight();
+    const urgentInsight = await getMostUrgentCustomerInsight();
 
-    if (!latestInsight) {
+    if (!urgentInsight) {
         return null;
     }
 
     const nextReminder = await getNextReminderForCustomer(
-        latestInsight.customerId
+        urgentInsight.customerId
     );
 
     return {
-        customerName: latestInsight.customerName,
+        customerName: urgentInsight.customerName,
 
-        noticed: latestInsight.aiSummary,
+        noticed: urgentInsight.aiSummary,
 
         nextAction: nextReminder
             ? formatNextAction(
@@ -176,7 +196,29 @@ async function getDashboardInsight(): Promise<DashboardInsight | null> {
               )
             : null,
 
-        updatedAt: latestInsight.lastAnalysedAt,
+        updatedAt: urgentInsight.lastAnalysedAt,
+    };
+}
+
+async function getMissionSummary(): Promise<MissionSummary> {
+    const [
+        remainingFollowUps,
+        remainingReviews,
+        followUpsActionedToday,
+        reviewsCompletedToday,
+    ] = await Promise.all([
+        getRemindersNeedingAttentionCount(),
+        getUnreviewedLowConfidenceInvoiceCount(),
+        getReminderFollowUpsActionedTodayCount(),
+        getInvoiceReviewsCompletedTodayCount(),
+    ]);
+
+    return {
+        completedToday: followUpsActionedToday + reviewsCompletedToday,
+
+        remainingToday: remainingFollowUps + remainingReviews,
+        remainingFollowUps,
+        remainingReviews,
     };
 }
 
@@ -185,13 +227,15 @@ export async function getDashboard(): Promise<DashboardData> {
     const [
         metrics,
         activity,
-        approvals,
+        decisionQueue,
         insight,
+        mission,
     ] = await Promise.all([
         getDashboardMetrics(),
         getRecentActivity(3),
-        getInvoicesNeedingReviewDetails(),
+        getDecisionQueue(),
         getDashboardInsight(),
+        getMissionSummary(),
     ]);
 
     return {
@@ -199,10 +243,10 @@ export async function getDashboard(): Promise<DashboardData> {
 
         activity,
 
-        approvals,
+        decisionQueue,
 
         insight,
 
-        mission: null,
+        mission,
     };
 }

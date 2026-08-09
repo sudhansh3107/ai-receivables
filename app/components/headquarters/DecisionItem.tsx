@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { LucideIcon, ChevronRight } from "lucide-react";
 import { tokens } from "@/lib/theme/tokens";
+import Button from "../ui/Button";
 
 interface DecisionItemProps {
   icon: LucideIcon;
@@ -13,6 +14,10 @@ interface DecisionItemProps {
   company: string;
   subtitle: string;
   reasons?: string[] | null;
+
+  actionLabel?: string;
+  onAction?: () => void;
+  actionPending?: boolean;
 }
 
 export default function DecisionItem({
@@ -23,9 +28,12 @@ export default function DecisionItem({
   company,
   subtitle,
   reasons,
+  actionLabel,
+  onAction,
+  actionPending = false,
 }: DecisionItemProps) {
   return (
-    <motion.button
+    <motion.div
       whileHover={{
         y: -2,
         boxShadow: tokens.shadows.hover,
@@ -68,6 +76,7 @@ export default function DecisionItem({
             flex
             h-14
             w-14
+            shrink-0
             items-center
             justify-center
             rounded-2xl
@@ -100,43 +109,56 @@ export default function DecisionItem({
             {subtitle}
           </span>
 
-          <p
-            className="mt-1.5 text-[11px] leading-[15px]"
-            style={{
-              color: tokens.semantic.textMuted,
-            }}
-          >
-            {reasons && reasons.length > 0
-              ? `What I confirmed: ${reasons.join(", ")}`
-              : "Review recommended based on low confidence."}
-          </p>
+          {reasons !== undefined && (
+            <p
+              className="mt-1.5 text-[11px] leading-[15px]"
+              style={{
+                color: tokens.semantic.textMuted,
+              }}
+            >
+              {reasons && reasons.length > 0
+                ? `What I confirmed: ${reasons.join(", ")}`
+                : "Review recommended based on low confidence."}
+            </p>
+          )}
 
         </div>
 
       </div>
 
-      {/* Arrow */}
+      {/* Right: explicit action, or a plain chevron if none applies */}
 
-      <motion.div
-        whileHover={{
-          x: 3,
-        }}
-        transition={{
-          duration: 0.2,
-        }}
-      >
-        <ChevronRight
-          size={19}
-          strokeWidth={2}
-          className="
-            text-[#7D7D7D]
-            transition-colors
-            duration-300
-            group-hover:text-[#8F6B4A]
-          "
-        />
-      </motion.div>
+      {actionLabel && onAction ? (
+        <Button
+          variant="secondary"
+          onClick={onAction}
+          disabled={actionPending}
+          className="ml-4 shrink-0"
+        >
+          {actionPending ? "Saving…" : actionLabel}
+        </Button>
+      ) : (
+        <motion.div
+          whileHover={{
+            x: 3,
+          }}
+          transition={{
+            duration: 0.2,
+          }}
+        >
+          <ChevronRight
+            size={19}
+            strokeWidth={2}
+            className="
+              text-[#7D7D7D]
+              transition-colors
+              duration-300
+              group-hover:text-[#8F6B4A]
+            "
+          />
+        </motion.div>
+      )}
 
-    </motion.button>
+    </motion.div>
   );
 }

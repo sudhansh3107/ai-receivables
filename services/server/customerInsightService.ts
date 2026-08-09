@@ -5,6 +5,8 @@ import {
 import { logInvoiceActivity } from "./activityLogService";
 import { ActivityTypes } from "@/lib/activityTypes";
 import { logEmployeeActivity } from "../EmployeeActivityService";
+import { toLocalDateString } from "@/lib/date";
+import { isInvoiceOverdue } from "@/lib/invoiceOverdue";
 interface InvoiceRecord {
     id: string;
     invoice_amount: number | string;
@@ -373,11 +375,11 @@ export async function calculateCustomerInsights(
                 ) > 0
         ).length;
 
+    const today = toLocalDateString(new Date());
+
     const overdueInvoices =
-        invoiceRecords.filter(
-            (invoice) =>
-                invoice.status ===
-                "overdue"
+        invoiceRecords.filter((invoice) =>
+            isInvoiceOverdue(invoice, today)
         );
 
     const overdueAmount =
@@ -1237,10 +1239,17 @@ interface CustomerInsightRow {
     customer_id: string;
     ai_summary: string | null;
     last_analysed_at: string;
+    overdue_amount: number;
     customers: { company_name: string } | null;
 }
 
-export async function getLatestCustomerInsight(): Promise<LatestCustomerInsight | null> {
+// Selects the customer with the most meaningful current AR
+// situation — highest real overdue exposure first, most recently
+// analysed as a tiebreaker — rather than simply whichever customer
+// was most recently touched by an upload or payment. Point-in-time
+// only: no trend/comparison claim is made, since customer_insights
+// only stores a current snapshot with no history to compare against.
+export async function getMostUrgentCustomerInsight(): Promise<LatestCustomerInsight | null> {
     const { data, error } = await supabase
         .from("customer_insights")
         .select(
@@ -1248,12 +1257,14 @@ export async function getLatestCustomerInsight(): Promise<LatestCustomerInsight 
             customer_id,
             ai_summary,
             last_analysed_at,
+            overdue_amount,
             customers (
                 company_name
             )
         `
         )
         .not("ai_summary", "is", null)
+        .order("overdue_amount", { ascending: false })
         .order("last_analysed_at", { ascending: false })
         .limit(1)
         .maybeSingle();

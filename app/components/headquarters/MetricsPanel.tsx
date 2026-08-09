@@ -79,8 +79,8 @@ export default function MetricsPanel() {
         <StatCard
           icon={UserRoundCheck}
           iconColor="#B7852E"
-          value={metrics.needsApproval}
-          title="Needs Approval"
+          value={metrics.needsReview}
+          title="Needs Review"
           subtitle="Pending decisions"
         />
 

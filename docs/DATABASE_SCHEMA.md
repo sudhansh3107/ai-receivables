@@ -32,6 +32,7 @@ CREATE TABLE public.invoices (
   invoice_confidence_level text CHECK (invoice_confidence_level IS NULL OR (invoice_confidence_level = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text]))),
   invoice_confidence_reasons jsonb,
   payment_terms integer DEFAULT 30,
+  confidence_reviewed_at timestamp with time zone,
   CONSTRAINT invoices_pkey PRIMARY KEY (id),
   CONSTRAINT invoices_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
   CONSTRAINT invoices_upload_session_id_fkey FOREIGN KEY (upload_session_id) REFERENCES public.upload_sessions(id)
@@ -106,6 +107,7 @@ CREATE TABLE public.reminders (
   sent_at timestamp with time zone,
   delivery_status text NOT NULL DEFAULT 'pending'::text CHECK (delivery_status = ANY (ARRAY['pending'::text, 'queued'::text, 'sent'::text, 'delivered'::text, 'failed'::text, 'cancelled'::text])),
   response_received boolean NOT NULL DEFAULT false,
+  actioned_at timestamp with time zone,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT reminders_pkey PRIMARY KEY (id),

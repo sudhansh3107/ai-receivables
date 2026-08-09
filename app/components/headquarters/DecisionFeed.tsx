@@ -1,36 +1,85 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import { motion } from "motion/react";
 import {
   ArrowRight,
+  Clock3,
   FileWarning,
+  LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import Card from "../ui/Card";
 import DecisionItem from "./DecisionItem";
 import { useDashboard } from "@/app/hooks/useDashboard";
+import { tokens } from "@/lib/theme/tokens";
+import type { DecisionKind } from "@/services/server/decisionService";
+import { markInvoiceReviewed } from "@/services/invoiceService";
+import { markReminderActioned } from "@/services/server/reminderService";
 
-function formatInvoiceAmount(amount: number, currency: string) {
-  const locale = currency === "INR" ? "en-IN" : "en-US";
-
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency,
-  }).format(amount);
-}
+const KIND_STYLES: Record<
+  DecisionKind,
+  {
+    icon: LucideIcon;
+    iconColor: string;
+    iconBackground: string;
+    actionLabel: string;
+  }
+> = {
+  low_confidence: {
+    icon: FileWarning,
+    iconColor: tokens.status.pending.text,
+    iconBackground: tokens.status.pending.background,
+    actionLabel: "Mark reviewed",
+  },
+  payment_follow_up: {
+    icon: Clock3,
+    iconColor: tokens.status.info.text,
+    iconBackground: tokens.status.info.background,
+    actionLabel: "Mark follow-up done",
+  },
+};
 
 export default function DecisionFeed() {
   const {
     dashboard,
     loading,
     error,
+    refresh,
   } = useDashboard();
+
+  const [pendingId, setPendingId] = useState<string | null>(null);
 
   if (loading || error || !dashboard) {
     return null;
   }
 
-  const { approvals } = dashboard;
+  const { items, totalCount } = dashboard.decisionQueue;
+
+  async function handleAction(
+    id: string,
+    kind: DecisionKind,
+    actionId: string
+  ) {
+    setPendingId(id);
+
+    try {
+      if (kind === "low_confidence") {
+        await markInvoiceReviewed(actionId);
+      } else {
+        await markReminderActioned(actionId);
+      }
+
+      await refresh();
+    } catch (err) {
+      console.error(err);
+      toast.error("Couldn't update this item. Please try again.");
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   return (
     <motion.div
@@ -51,46 +100,61 @@ export default function DecisionFeed() {
         <div className="flex items-center justify-between px-3 py-2">
 
           <h2 className="text-2xl font-semibold tracking-[-0.02em] text-[#1A1A1A]">
-            Needs Your Review
+            Needs Your Attention
           </h2>
 
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#FBE8E6]">
 
             <span className="text-[13px] font-semibold text-[#C96D55]">
-              {approvals.length}
+              {totalCount}
             </span>
 
           </div>
 
         </div>
 
-        {/* Feed */}
+        {/* Feed — top 3 prioritized decisions; totalCount above reflects
+            every currently-actionable decision, not just what's shown */}
 
-        {approvals.length > 0 ? (
-          <div className="mt-3 space-y-4 px-3">
+        {items.length > 0 ? (
+          <div className="mt-3 flex-1 space-y-4 overflow-y-auto px-3 pb-3">
 
-            {approvals.map((invoice) => (
-              <DecisionItem
-                key={invoice.id}
-                icon={FileWarning}
-                iconColor="#C96D55"
-                iconBackground="#FBE8E6"
-                title="Low-confidence extraction"
-                company={invoice.customerName}
-                subtitle={`Invoice ${invoice.invoiceNumber} · ${formatInvoiceAmount(
-                  invoice.amount,
-                  invoice.currency
-                )}`}
-                reasons={invoice.confidenceReasons}
-              />
-            ))}
+            {items.slice(0, 3).map((decision) => {
+              const style = KIND_STYLES[decision.kind];
+
+              return (
+                <DecisionItem
+                  key={decision.id}
+                  icon={style.icon}
+                  iconColor={style.iconColor}
+                  iconBackground={style.iconBackground}
+                  title={decision.title}
+                  company={decision.customerName}
+                  subtitle={decision.subtitle}
+                  reasons={
+                    decision.kind === "low_confidence"
+                      ? decision.reasons
+                      : undefined
+                  }
+                  actionLabel={style.actionLabel}
+                  actionPending={pendingId === decision.id}
+                  onAction={() =>
+                    handleAction(
+                      decision.id,
+                      decision.kind,
+                      decision.actionId
+                    )
+                  }
+                />
+              );
+            })}
 
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-center px-8 text-center">
 
             <p className="text-[14px] leading-6 text-[#8C857C]">
-              No invoices need your review right now.
+              Nothing needs your attention right now.
             </p>
 
           </div>
@@ -98,30 +162,33 @@ export default function DecisionFeed() {
 
         {/* Footer */}
 
-        <button
-          disabled
-          title="Approvals isn't available yet"
+        <Link
+          href="/decisions"
           className="
+            group/link
             mt-4
             flex
-            cursor-not-allowed
             items-center
             gap-2
             px-7
             py-4
             text-[15px]
             font-semibold
-            text-[#B3ABA0]
+            text-[#8F6B4A]
+            transition-colors
+            duration-200
+            hover:text-[#7A5C40]
           "
         >
-          View all approvals
+          View all decisions
 
           <ArrowRight
             size={17}
             strokeWidth={2}
+            className="transition-transform duration-200 group-hover/link:translate-x-0.5"
           />
 
-        </button>
+        </Link>
 
       </Card>
     </motion.div>
