@@ -63,7 +63,7 @@ export function useDashboard() {
         void refresh();
 
         const channel = supabase.channel(
-            `dashboard-${Date.now()}`
+            `dashboard-${crypto.randomUUID()}`
         );
 
         const subscribe = (table: string) => {
