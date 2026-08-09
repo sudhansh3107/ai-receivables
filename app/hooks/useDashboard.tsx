@@ -22,6 +22,8 @@ interface DashboardContextValue {
     loading: boolean;
     error: Error | null;
     refresh: () => Promise<void>;
+    suppressAutoRefresh: () => void;
+    resumeAutoRefresh: () => void;
 }
 
 const DashboardContext =
@@ -61,6 +63,23 @@ export function DashboardProvider({
 
     const refreshTimeout =
         useRef<NodeJS.Timeout | null>(null);
+
+    // Gates ONLY refreshDebounced (the Realtime-event-driven path)
+    // below — never `refresh()` itself, which must always remain
+    // directly callable. Realtime stays fully subscribed throughout;
+    // this only decides whether an incoming event is allowed to
+    // trigger an automatic fetch right now. Set by consumers (e.g.
+    // the invoice upload workflow) that need a burst of their own
+    // writes to not visibly refresh Headquarters mid-workflow.
+    const suppressAutoRefreshRef = useRef(false);
+
+    const suppressAutoRefresh = useCallback(() => {
+        suppressAutoRefreshRef.current = true;
+    }, []);
+
+    const resumeAutoRefresh = useCallback(() => {
+        suppressAutoRefreshRef.current = false;
+    }, []);
 
     // Deliberately has an EMPTY dependency array so its identity
     // never changes across renders. If it depended on `dashboard`
@@ -124,6 +143,10 @@ export function DashboardProvider({
     }, []);
 
     const refreshDebounced = useCallback(() => {
+        if (suppressAutoRefreshRef.current) {
+            return;
+        }
+
         if (refreshTimeout.current) {
             clearTimeout(refreshTimeout.current);
         }
@@ -180,7 +203,14 @@ export function DashboardProvider({
 
     return (
         <DashboardContext.Provider
-            value={{ dashboard, loading, error, refresh }}
+            value={{
+                dashboard,
+                loading,
+                error,
+                refresh,
+                suppressAutoRefresh,
+                resumeAutoRefresh,
+            }}
         >
             {children}
         </DashboardContext.Provider>

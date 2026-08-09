@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useDropzone } from "react-dropzone";
 import { motion } from "motion/react";
@@ -21,7 +21,7 @@ import {
 } from "@/services/invoiceService";
 import { useUploadSession } from "@/app/hooks/useUploadSession";
 import { processInvoiceAction } from "@/app/actions/processInvoiceAction";
-import { useRouter } from "next/navigation";
+import { useDashboard } from "@/app/hooks/useDashboard";
 
 import { logEmployeeActivity } from "@/services/EmployeeActivityService";
 import EmployeeActivityFeed from "./EmployeeActivityFeed";
@@ -53,11 +53,20 @@ export default function UploadInvoice({
     useState(false);
     const [confidenceBreakdown, setConfidenceBreakdown] =
         useState<UploadSessionConfidenceBreakdown | null>(null);
-    const router = useRouter();
+
+    const { refresh, suppressAutoRefresh, resumeAutoRefresh } =
+        useDashboard();
+
+    // Read at unmount time to decide whether this instance ever
+    // reached genuine completion — a ref (not the `completed` state
+    // value) so the cleanup below always sees the final, correct
+    // value regardless of closure timing.
+    const completedRef = useRef(false);
+
     const handleClose = () => {
-    router.refresh();
-    onClose();
-};
+        onClose();
+    };
+
    useEffect(() => {
     if (
         session &&
@@ -67,8 +76,28 @@ export default function UploadInvoice({
     ) {
         setSuccessShown(true);
         setCompleted(true);
+        completedRef.current = true;
     }
 }, [session, successShown]);
+
+    // Suppresses Headquarters' auto-refresh for this component's
+    // entire mounted lifetime — covers every write the upload/
+    // processing workflow makes, no matter how it's exited. On
+    // unmount (Back, X, Escape via the parent modal, or the
+    // completed screen's controls), auto-refresh always resumes;
+    // an explicit one-time refresh only fires if the workflow
+    // actually reached completion, never on cancel/early close.
+    useEffect(() => {
+        suppressAutoRefresh();
+
+        return () => {
+            resumeAutoRefresh();
+
+            if (completedRef.current) {
+                void refresh();
+            }
+        };
+    }, [suppressAutoRefresh, resumeAutoRefresh, refresh]);
 
     useEffect(() => {
         if (!completed || !uploadSessionId) return;
