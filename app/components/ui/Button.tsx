@@ -75,6 +75,9 @@ export default function Button({
         cursor-pointer
         transition-all
         duration-200
+        disabled:opacity-50
+        disabled:cursor-not-allowed
+        disabled:pointer-events-none
         ${className}
       `}
       style={{

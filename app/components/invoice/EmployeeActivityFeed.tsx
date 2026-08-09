@@ -68,7 +68,7 @@ export default function EmployeeActivityFeed({
                 return (
                     <FileText
                         size={18}
-                        className="text-[#A47A45]"
+                        color={tokens.brand.primary}
                     />
                 );
 
@@ -76,7 +76,7 @@ export default function EmployeeActivityFeed({
                 return (
                     <Brain
                         size={18}
-                        className="text-[#A47A45]"
+                        color={tokens.brand.primary}
                     />
                 );
 
@@ -84,7 +84,7 @@ export default function EmployeeActivityFeed({
                 return (
                     <CheckCircle2
                         size={18}
-                        className="text-[#5F8F58]"
+                        color={tokens.semantic.success}
                     />
                 );
 
@@ -92,20 +92,35 @@ export default function EmployeeActivityFeed({
                 return (
                     <Database
                         size={18}
-                        className="text-[#A47A45]"
+                        color={tokens.brand.primary}
                     />
                 );
         }
     }
 
     return (
-        <div className="mt-6 rounded-2xl border border-[#ECE5DD] bg-white p-6">
+        <div
+            className="mt-6 p-6"
+            style={{
+                borderRadius: tokens.radius.container,
+                border: `1px solid ${tokens.semantic.border}`,
+                background: tokens.semantic.surface,
+            }}
+        >
 
-            <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-[#23201D]">
+            <h3
+                className="text-[14px] font-semibold tracking-[-0.01em]"
+                style={{
+                    color: tokens.semantic.textPrimary,
+                }}
+            >
                 Live Activity
             </h3>
 
-            <div className="mt-5 space-y-4">
+            <div
+                className="mt-5 space-y-4"
+                aria-live="polite"
+            >
 
                 {activities.map((activity) => (
 
@@ -129,11 +144,21 @@ export default function EmployeeActivityFeed({
 
                         <div className="flex-1">
 
-                            <p className="text-[14px] font-medium text-[#23201D]">
+                            <p
+                                className="text-[14px] font-medium"
+                                style={{
+                                    color: tokens.semantic.textPrimary,
+                                }}
+                            >
                                 {activity.message}
                             </p>
 
-                            <p className="mt-1 text-[12px] text-[#8A857F]">
+                            <p
+                                className="mt-1 text-[12px]"
+                                style={{
+                                    color: tokens.semantic.textMuted,
+                                }}
+                            >
                                 {new Date(
                                     activity.created_at
                                 ).toLocaleTimeString([], {

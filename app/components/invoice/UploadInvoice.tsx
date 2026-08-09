@@ -1,6 +1,16 @@
+"use client";
+
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useDropzone } from "react-dropzone";
+import { motion } from "motion/react";
+import {
+    ArrowRight,
+    Check,
+    FileText,
+    FileUp,
+} from "lucide-react";
+
 import { createUploadSession,updateProcessedFiles,completeUploadSession } from "@/services/UploadSessionService";
 import ModalHeader from "@/app/components/shared/ModalHeader";
 import { uploadInvoice } from "@/services/storageService";
@@ -15,17 +25,21 @@ import { useRouter } from "next/navigation";
 
 import { logEmployeeActivity } from "@/services/EmployeeActivityService";
 import EmployeeActivityFeed from "./EmployeeActivityFeed";
+import Button from "@/app/components/ui/Button";
+import { tokens } from "@/lib/theme/tokens";
 
 
 // import { extractInvoice } from "@/services/aiService";
 
 type UploadInvoiceProps = {
+    stepLabel?: string;
     onBack: () => void;
     onClose: () => void;
     onReviewResults?: () => void;
 };
 
 export default function UploadInvoice({
+    stepLabel,
     onBack,
     onClose,
     onReviewResults,
@@ -94,22 +108,22 @@ export default function UploadInvoice({
         try {
             setUploading(true);
             setSuccessShown(false);
-            
+
     const uploadSession = await createUploadSession(selectedFiles.length);
     setUploadSessionId(uploadSession.id);
-        
+
     await logEmployeeActivity({
     uploadSessionId: uploadSession.id,
     activityType: "assignment_started",
     message: `Received ${selectedFiles.length} invoice(s).`,
 });
 
-            
+
 
 let processed = 0;
 
 for (const file of selectedFiles) {
-    
+
     await logEmployeeActivity({
     uploadSessionId: uploadSession.id,
     activityType: "reading_invoice",
@@ -142,7 +156,7 @@ await logEmployeeActivity({
 }
 
         await completeUploadSession(uploadSession.id);
-        
+
         await logEmployeeActivity({
     uploadSessionId: uploadSession.id,
     activityType: "assignment_completed",
@@ -152,57 +166,112 @@ await logEmployeeActivity({
             setSelectedFiles([]);
         } catch (error) {
             console.error(error);
-            alert("One or more uploads failed.");
+            toast.error("One or more uploads failed.");
         } finally {
             setUploading(false);
         }
     };
 
-   
-
 if (completed) {
+    const summaryChips: {
+        label: string;
+        value: number | string;
+        status: { background: string; text: string };
+    }[] = [
+        {
+            label: "High Confidence",
+            value: confidenceBreakdown
+                ? confidenceBreakdown.highConfidence
+                : "—",
+            status: tokens.status.completed,
+        },
+        {
+            label: "Review Recommended",
+            value: confidenceBreakdown
+                ? confidenceBreakdown.reviewRecommended
+                : "—",
+            status: tokens.status.pending,
+        },
+        {
+            label: "Needs Review",
+            value: confidenceBreakdown
+                ? confidenceBreakdown.needsReview
+                : "—",
+            status: tokens.status.overdue,
+        },
+    ];
+
     return (
         <>
             <ModalHeader
                 title="Accounts Receivable Employee"
                 subtitle="Assignment completed successfully."
+                stepLabel={stepLabel}
                 onClose={handleClose}
             />
 
-            <div className="flex flex-col items-center py-6">
+            <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                    duration: 0.35,
+                    ease: tokens.motion.easing,
+                }}
+                className="flex flex-col items-center py-6"
+            >
 
-                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#EEF7EC]">
-
-                    <svg
-                        width="36"
-                        height="36"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="#5F8F58"
-                        strokeWidth="2.5"
-                    >
-                        <path d="M20 6L9 17l-5-5" />
-                    </svg>
-
+                <div
+                    className="flex h-20 w-20 items-center justify-center rounded-full"
+                    style={{
+                        background: tokens.status.completed.background,
+                    }}
+                >
+                    <Check
+                        size={36}
+                        strokeWidth={2.5}
+                        color={tokens.semantic.success}
+                    />
                 </div>
 
-                <h2 className="mt-6 text-[32px] font-semibold tracking-[-0.03em] text-[#23201D]">
+                <h2
+                    className="mt-6 text-[32px] font-semibold tracking-[-0.03em]"
+                    style={{
+                        color: tokens.semantic.textPrimary,
+                    }}
+                >
                     Assignment Complete
                 </h2>
 
-                <p className="mt-4 max-w-[380px] text-center text-[15px] leading-7 text-[#6E6963]">
-                    I've completed the work you assigned.
+                <p
+                    className="mt-4 max-w-[380px] text-center text-[15px] leading-7"
+                    style={{
+                        color: tokens.semantic.textSecondary,
+                    }}
+                >
+                    I&apos;ve completed the work you assigned.
                     All invoices have been processed and added
                     to your workspace.
                 </p>
 
-            </div>
+            </motion.div>
 
             {/* Work Summary */}
 
-            <div className="rounded-2xl border border-[#ECE5DD] bg-[#FCFBF8] p-6">
+            <div
+                className="p-6"
+                style={{
+                    borderRadius: tokens.radius.container,
+                    border: `1px solid ${tokens.semantic.border}`,
+                    background: tokens.semantic.surfaceSecondary,
+                }}
+            >
 
-                <h3 className="mb-5 text-[13px] font-medium uppercase tracking-[0.08em] text-[#9B938B]">
+                <h3
+                    className="mb-5 text-[13px] font-medium uppercase tracking-[0.08em]"
+                    style={{
+                        color: tokens.semantic.textMuted,
+                    }}
+                >
                     Work Summary
                 </h3>
 
@@ -210,105 +279,164 @@ if (completed) {
 
                     <div className="flex items-center justify-between">
 
-                        <span className="text-[15px] text-[#6E6963]">
+                        <span
+                            className="text-[15px]"
+                            style={{
+                                color: tokens.semantic.textSecondary,
+                            }}
+                        >
                             Invoices Processed
                         </span>
 
-                        <span className="text-[16px] font-semibold text-[#23201D]">
+                        <span
+                            className="text-[16px] font-semibold"
+                            style={{
+                                color: tokens.semantic.textPrimary,
+                            }}
+                        >
                             {session?.processed_files}
                         </span>
 
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    {summaryChips.map((chip) => (
+                        <div
+                            key={chip.label}
+                            className="flex items-center justify-between"
+                        >
+                            <span
+                                className="text-[15px]"
+                                style={{
+                                    color: tokens.semantic.textSecondary,
+                                }}
+                            >
+                                {chip.label}
+                            </span>
 
-                        <span className="text-[15px] text-[#6E6963]">
-                            High Confidence
-                        </span>
-
-                        <span className="text-[16px] font-semibold text-[#5F8F58]">
-                            {confidenceBreakdown
-                                ? confidenceBreakdown.highConfidence
-                                : "—"}
-                        </span>
-
-                    </div>
-
-                    <div className="flex items-center justify-between">
-
-                        <span className="text-[15px] text-[#6E6963]">
-                            Review Recommended
-                        </span>
-
-                        <span className="text-[16px] font-semibold text-[#A47A45]">
-                            {confidenceBreakdown
-                                ? confidenceBreakdown.reviewRecommended
-                                : "—"}
-                        </span>
-
-                    </div>
-
-                    <div className="flex items-center justify-between">
-
-                        <span className="text-[15px] text-[#6E6963]">
-                            Needs Review
-                        </span>
-
-                        <span className="text-[16px] font-semibold text-[#C96D55]">
-                            {confidenceBreakdown
-                                ? confidenceBreakdown.needsReview
-                                : "—"}
-                        </span>
-
-                    </div>
+                            <span
+                                className="rounded-full px-3 py-1 text-[14px] font-semibold"
+                                style={{
+                                    background: chip.status.background,
+                                    color: chip.status.text,
+                                }}
+                            >
+                                {chip.value}
+                            </span>
+                        </div>
+                    ))}
 
                 </div>
 
             </div>
 
-            <p className="mt-6 text-center text-[14px] leading-6 text-[#7D7D7D]">
+            <p
+                className="mt-6 text-center text-[14px] leading-6"
+                style={{
+                    color: tokens.semantic.textMuted,
+                }}
+            >
                 Everything has been added to your workspace.
                 You can continue working while I monitor incoming invoices.
             </p>
 
-            <button
-    onClick={handleClose}
-    className="mt-8 w-full rounded-xl bg-[#A47A45] py-3 text-[15px] font-medium text-white transition hover:bg-[#946B3D]"
->
-    Review Results →
-</button>
+            <Button
+                variant="primary"
+                onClick={handleClose}
+                className="mt-8 w-full justify-center"
+            >
+                Return to Mission Control
+
+                <ArrowRight size={16} strokeWidth={2} />
+            </Button>
         </>
     );
 }
+
+    const total = session?.total_files ?? selectedFiles.length;
+    const processed = session?.processed_files ?? 0;
+    const percent = Math.round((processed / (total || 1)) * 100);
 
     return (
     <>
         <ModalHeader
             title="Accounts Receivable Employee"
             subtitle="Working on your request..."
+            stepLabel={stepLabel}
+            showBack
+            onBack={onBack}
             onClose={onClose}
         />
 
         {!uploading ? (
-            <>
+            <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                    duration: 0.35,
+                    ease: tokens.motion.easing,
+                }}
+            >
                 <div
                     {...getRootProps()}
-                    className="cursor-pointer rounded-lg border-2 border-dashed border-gray-300 p-10 text-center transition hover:border-blue-500"
+                    className="cursor-pointer p-10 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8F6B4A]/40"
+                    style={{
+                        borderRadius: tokens.radius.container,
+                        border: `2px dashed ${
+                            isDragActive
+                                ? tokens.brand.primary
+                                : tokens.semantic.border
+                        }`,
+                        background: isDragActive
+                            ? tokens.semantic.surfaceWarm
+                            : "transparent",
+                    }}
                 >
                     <input {...getInputProps()} />
 
-                    {isDragActive ? (
-                        <p>Drop your invoices here...</p>
-                    ) : (
-                        <p>
-                            Drag & drop PDF invoices here, or click to browse.
+                    <div className="flex flex-col items-center gap-3">
+
+                        <div
+                            className="flex h-12 w-12 items-center justify-center rounded-full"
+                            style={{
+                                background: tokens.semantic.surfaceWarm,
+                            }}
+                        >
+                            <FileUp
+                                size={20}
+                                strokeWidth={1.8}
+                                color={tokens.brand.primary}
+                            />
+                        </div>
+
+                        <p
+                            className="text-[14px]"
+                            style={{
+                                color: tokens.semantic.textSecondary,
+                            }}
+                        >
+                            {isDragActive
+                                ? "Drop your invoices here..."
+                                : "Drag & drop PDF invoices here, or click to browse."}
                         </p>
-                    )}
+
+                    </div>
                 </div>
 
                 {selectedFiles.length > 0 && (
-                    <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                        <h3 className="mb-3 font-semibold">
+                    <div
+                        className="mt-6 p-4"
+                        style={{
+                            borderRadius: tokens.radius.container,
+                            border: `1px solid ${tokens.semantic.border}`,
+                            background: tokens.semantic.surfaceSecondary,
+                        }}
+                    >
+                        <h3
+                            className="mb-3 text-[13px] font-semibold"
+                            style={{
+                                color: tokens.semantic.textPrimary,
+                            }}
+                        >
                             Selected Files ({selectedFiles.length})
                         </h3>
 
@@ -316,26 +444,65 @@ if (completed) {
                             {selectedFiles.map((file, index) => (
                                 <div
                                     key={`${file.name}-${index}`}
-                                    className="flex items-center justify-between rounded-md border bg-white px-3 py-2"
+                                    className="flex items-center justify-between p-2"
+                                    style={{
+                                        borderRadius: tokens.radius.container,
+                                        border: `1px solid ${tokens.semantic.border}`,
+                                        background: tokens.semantic.surface,
+                                    }}
                                 >
-                                    <div>
-                                        <p className="font-medium">
-                                            {file.name}
-                                        </p>
+                                    <div className="flex items-center gap-3">
 
-                                        <p className="text-sm text-gray-500">
-                                            {(file.size / 1024 / 1024).toFixed(
-                                                2
-                                            )}{" "}
-                                            MB
-                                        </p>
+                                        <div
+                                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                                            style={{
+                                                background:
+                                                    tokens.semantic.surfaceWarm,
+                                            }}
+                                        >
+                                            <FileText
+                                                size={15}
+                                                strokeWidth={1.8}
+                                                color={tokens.brand.primary}
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <p
+                                                className="text-[13px] font-medium"
+                                                style={{
+                                                    color: tokens.semantic
+                                                        .textPrimary,
+                                                }}
+                                            >
+                                                {file.name}
+                                            </p>
+
+                                            <p
+                                                className="text-[12px]"
+                                                style={{
+                                                    color: tokens.semantic
+                                                        .textMuted,
+                                                }}
+                                            >
+                                                {(file.size / 1024 / 1024).toFixed(
+                                                    2
+                                                )}{" "}
+                                                MB
+                                            </p>
+                                        </div>
+
                                     </div>
 
                                     <button
                                         type="button"
                                         onClick={() => removeFile(index)}
                                         disabled={uploading}
-                                        className="rounded-md bg-red-100 px-3 py-1 text-sm text-red-600 transition hover:bg-red-200 disabled:opacity-50"
+                                        aria-label={`Remove ${file.name}`}
+                                        className="rounded-full px-3 py-1 text-[12px] font-medium transition-colors disabled:opacity-50"
+                                        style={{
+                                            color: tokens.semantic.danger,
+                                        }}
                                     >
                                         Remove
                                     </button>
@@ -345,38 +512,66 @@ if (completed) {
                     </div>
                 )}
 
-                <button
+                <Button
+                    variant="primary"
                     onClick={handleUpload}
                     disabled={
                         selectedFiles.length === 0 ||
                         uploading
                     }
-                    className="mt-6 w-full rounded-lg bg-blue-600 px-6 py-3 font-medium text-white transition hover:bg-blue-700 disabled:bg-gray-400"
+                    className="mt-6 w-full justify-center"
                 >
                     Assign Work
-                </button>
-            </>
+                </Button>
+            </motion.div>
         ) : (
-            <>
+            <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                    duration: 0.35,
+                    ease: tokens.motion.easing,
+                }}
+            >
                 {/* Progress */}
 
-                <div className="rounded-2xl border border-[#ECE5DD] bg-[#FCFBF8] p-6">
+                <div
+                    className="p-6"
+                    style={{
+                        borderRadius: tokens.radius.container,
+                        border: `1px solid ${tokens.semantic.border}`,
+                        background: tokens.semantic.surfaceSecondary,
+                    }}
+                >
 
                     <div className="flex items-center justify-between">
 
                         <div>
 
-                            <p className="text-[13px] font-medium uppercase tracking-[0.08em] text-[#9B938B]">
+                            <p
+                                className="text-[13px] font-medium uppercase tracking-[0.08em]"
+                                style={{
+                                    color: tokens.semantic.textMuted,
+                                }}
+                            >
                                 Overall Progress
                             </p>
 
-                            <h2 className="mt-2 text-[30px] font-semibold tracking-[-0.03em] text-[#23201D]">
-                                {session?.processed_files ?? 0} /{" "}
-                                {session?.total_files ??
-                                    selectedFiles.length}
+                            <h2
+                                className="mt-2 text-[30px] font-semibold tracking-[-0.03em]"
+                                style={{
+                                    color: tokens.semantic.textPrimary,
+                                }}
+                            >
+                                {processed} / {total}
                             </h2>
 
-                            <p className="mt-1 text-[14px] text-[#7D7D7D]">
+                            <p
+                                className="mt-1 text-[14px]"
+                                style={{
+                                    color: tokens.semantic.textMuted,
+                                }}
+                            >
                                 invoices completed
                             </p>
 
@@ -384,21 +579,21 @@ if (completed) {
 
                         <div className="text-right">
 
-                            <div className="text-[40px] font-semibold text-[#A47A45]">
-
-                                {Math.round(
-                                    (((session?.processed_files ??
-                                        0) /
-                                        ((session?.total_files ??
-                                            selectedFiles.length) ||
-                                            1)) *
-                                        100)
-                                )}
-                                %
-
+                            <div
+                                className="text-[40px] font-semibold"
+                                style={{
+                                    color: tokens.brand.primary,
+                                }}
+                            >
+                                {percent}%
                             </div>
 
-                            <p className="text-[12px] text-[#8A847C]">
+                            <p
+                                className="text-[12px]"
+                                style={{
+                                    color: tokens.semantic.textMuted,
+                                }}
+                            >
                                 Complete
                             </p>
 
@@ -406,19 +601,24 @@ if (completed) {
 
                     </div>
 
-                    <div className="mt-6 h-3 overflow-hidden rounded-full bg-[#ECE5DD]">
+                    <div
+                        role="progressbar"
+                        aria-valuenow={percent}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuetext={`${processed} of ${total} invoices processed`}
+                        className="mt-6 h-3 overflow-hidden rounded-full"
+                        style={{
+                            background: tokens.semantic.border,
+                        }}
+                    >
 
                         <div
-                            className="h-full rounded-full bg-[#A47A45] transition-all duration-500"
+                            className="h-full rounded-full"
                             style={{
-                                width: `${
-                                    (((session?.processed_files ??
-                                        0) /
-                                        ((session?.total_files ??
-                                            selectedFiles.length) ||
-                                            1))) *
-                                    100
-                                }%`,
+                                width: `${percent}%`,
+                                background: tokens.brand.primary,
+                                transition: `width ${tokens.motion.slow} ease`,
                             }}
                         />
 
@@ -426,51 +626,16 @@ if (completed) {
 
                 </div>
 
-                {/* Progress */}
+                {/* Live Activity */}
 
-<div className="mt-6">
+                {uploadSessionId && (
+                    <EmployeeActivityFeed
+                        uploadSessionId={uploadSessionId}
+                    />
+                )}
 
-    <div className="flex items-center justify-between">
-
-        <span className="text-[14px] font-medium text-[#2C2B29]">
-            Overall Progress
-        </span>
-
-        <span className="text-[13px] text-[#7D7D7D]">
-            {session?.processed_files ?? 0} / {session?.total_files ?? 0}
-        </span>
-
-    </div>
-
-    <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#ECE5DD]">
-
-        <div
-            className="h-full rounded-full bg-[#A47A45] transition-all duration-500"
-            style={{
-                width: `${
-                    session
-                        ? (session.processed_files /
-                              session.total_files) *
-                          100
-                        : 0
-                }%`,
-            }}
-        />
-
-    </div>
-
-</div>
-
-{/* Live Activity */}
-
-{uploadSessionId && (
-    <EmployeeActivityFeed
-        uploadSessionId={uploadSessionId}
-    />
-)}
-
-</>
+            </motion.div>
         )}
     </>
 );
-                            }
+}
