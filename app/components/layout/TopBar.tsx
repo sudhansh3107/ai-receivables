@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import Button from "../ui/Button";
+import { tokens } from "@/lib/theme/tokens";
 
 type TopBarProps = {
   onAssignWork: () => void;
@@ -22,7 +23,10 @@ export default function TopBar({
       initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22 }}
-      className="sticky top-0 z-50 bg-[#F8F5F1]"
+      className="sticky top-0 z-50"
+      style={{
+        background: tokens.semantic.background,
+      }}
     >
       <div className="mx-auto max-w-[1600px] px-10 pt-4 pb-0">
 
@@ -96,7 +100,12 @@ export default function TopBar({
               Accounts Receivable Employee
             </span>
 
-            <div className="rounded-lg border border-[#ECE5DD] bg-[#F7F3EE] px-3 py-[6px]">
+            <div
+              className="rounded-lg border border-[#ECE5DD] px-3 py-[6px]"
+              style={{
+                background: tokens.semantic.surfaceSecondary,
+              }}
+            >
 
               <span className="text-[12px] font-medium text-[#66615B]">
                 AR-01

@@ -68,7 +68,7 @@ export default function ActivityFeed() {
 
         <div className="flex items-center justify-between border-b border-[#EFE8E0] px-2 py-2">
 
-          <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-[#1A1A1A]">
+          <h2 className="text-2xl font-semibold tracking-[-0.02em] text-[#1A1A1A]">
             Employee Activity
           </h2>
 

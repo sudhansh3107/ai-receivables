@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { Compass } from "lucide-react";
 
 import Card from "../ui/Card";
+import { tokens } from "@/lib/theme/tokens";
 
 export default function MissionCard() {
   return (
@@ -24,7 +25,12 @@ export default function MissionCard() {
       >
         <div className="flex flex-1 flex-col items-start justify-center px-8 py-8">
 
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F4EBE0]">
+          <div
+            className="flex h-11 w-11 items-center justify-center rounded-full"
+            style={{
+              background: tokens.semantic.surfaceWarm,
+            }}
+          >
 
             <Compass
               size={20}

@@ -12,6 +12,7 @@ import {
     getEmployeeActivity,
     subscribeToEmployeeActivity,
 } from "@/services/EmployeeActivityService";
+import { tokens } from "@/lib/theme/tokens";
 
 type EmployeeActivity = {
     id: string;
@@ -113,7 +114,12 @@ export default function EmployeeActivityFeed({
                         className="flex gap-4"
                     >
 
-                        <div className="mt-[2px] flex h-9 w-9 items-center justify-center rounded-full bg-[#F8F4EE]">
+                        <div
+                            className="mt-[2px] flex h-9 w-9 items-center justify-center rounded-full"
+                            style={{
+                                background: tokens.semantic.surfaceWarm,
+                            }}
+                        >
 
                             {getIcon(
                                 activity.activity_type

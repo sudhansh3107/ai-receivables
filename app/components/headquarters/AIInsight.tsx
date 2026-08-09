@@ -67,7 +67,7 @@ export default function AIInsight() {
                 color="#B88A4B"
               />
 
-              <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-[#1A1A1A]">
+              <h2 className="text-2xl font-semibold tracking-[-0.02em] text-[#1A1A1A]">
                 AI Insight
               </h2>
 

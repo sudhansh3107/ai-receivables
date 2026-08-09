@@ -6,6 +6,7 @@ import Sidebar from "../sidebar/Sidebar";
 import TopBar from "./TopBar";
 
 import NewInvoiceModal from "../invoice/NewInvoiceModal";
+import { tokens } from "@/lib/theme/tokens";
 
 export default function AppShell({
   children,
@@ -16,7 +17,12 @@ export default function AppShell({
     useState(false);
 
   return (
-    <div className="h-screen overflow-hidden bg-[#F8F5F2]">
+    <div
+      className="h-screen overflow-hidden"
+      style={{
+        background: tokens.semantic.background,
+      }}
+    >
 
       {/* Fixed Sidebar */}
 

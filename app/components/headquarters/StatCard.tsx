@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { animate, motion, useMotionValue } from "motion/react";
 import { ArrowDown, ArrowUp, LucideIcon } from "lucide-react";
+import { tokens } from "@/lib/theme/tokens";
 
 interface StatCardProps {
   icon: LucideIcon;
@@ -99,6 +100,7 @@ export default function StatCard({
     <motion.div
       whileHover={{
         y: -2,
+        boxShadow: tokens.shadows.hover,
       }}
       transition={{
         duration: 0.25,
@@ -118,7 +120,6 @@ export default function StatCard({
         duration-300
         hover:border-[#DED1C3]
         hover:bg-[#FEFDFC]
-        hover:shadow-[0_14px_30px_rgba(181,156,120,0.08)]
       "
     >
 
@@ -140,11 +141,13 @@ export default function StatCard({
             items-center
             justify-center
             rounded-full
-            bg-[#F8F4EE]
             transition-shadow
             duration-300
             group-hover:shadow-[0_8px_18px_rgba(184,138,75,0.12)]
           "
+          style={{
+            background: tokens.semantic.surfaceWarm,
+          }}
         >
           <Icon
             size={45}

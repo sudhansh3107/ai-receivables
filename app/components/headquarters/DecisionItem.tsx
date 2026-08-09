@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import { LucideIcon, ChevronRight } from "lucide-react";
+import { tokens } from "@/lib/theme/tokens";
 
 interface DecisionItemProps {
   icon: LucideIcon;
@@ -25,6 +26,7 @@ export default function DecisionItem({
     <motion.button
       whileHover={{
         y: -2,
+        boxShadow: tokens.shadows.hover,
       }}
       transition={{
         duration: 0.25,
@@ -45,7 +47,6 @@ export default function DecisionItem({
         duration-300
         hover:border-[#E1D4C5]
         hover:bg-[#F9F6F2]
-        hover:shadow-[0_10px_28px_rgba(181,156,120,0.08)]
       "
     >
       {/* Left */}

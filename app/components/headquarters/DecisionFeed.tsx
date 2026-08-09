@@ -50,7 +50,7 @@ export default function DecisionFeed() {
 
         <div className="flex items-center justify-between px-3 py-2">
 
-          <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-[#1A1A1A]">
+          <h2 className="text-2xl font-semibold tracking-[-0.02em] text-[#1A1A1A]">
             Needs Your Review
           </h2>
 

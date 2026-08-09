@@ -266,6 +266,16 @@ export const tokens = {
     caption: "0.875rem",
 
     label: "0.75rem",
+
+    // Recurring overline/eyebrow pattern (uppercase, tracked-wide
+    // section labels) used across headquarters/* — previously
+    // retyped ad hoc in each component.
+    eyebrow: {
+      fontSize: "13px",
+      fontWeight: 600,
+      letterSpacing: "0.18em",
+      textTransform: "uppercase",
+    },
   },
 
   // ========================================================
@@ -284,6 +294,19 @@ export const tokens = {
     "2xl": "36px",
 
     full: "9999px",
+
+    // Ordinary containers (list rows, chips, small panels) —
+    // Tailwind's `rounded-2xl` (16px) in practice, previously
+    // unrepresented in the scale between md(12) and lg(20).
+    container: "16px",
+
+    // Signature dashboard card radius. Canonically 28px — equal
+    // to `xl` today by design, but kept as its own named token
+    // because it represents a distinct role (the headquarters
+    // card shell) that may diverge from the generic `xl` step
+    // later. Also resolves the 30px/26px drift found across
+    // MissionCard/ActivityFeed/DecisionFeed/AIInsight/MetricsPanel.
+    card: "28px",
   },
 
   // ========================================================
@@ -298,6 +321,12 @@ export const tokens = {
     lg: "0 20px 60px rgba(26,26,26,.12)",
 
     premium: "0 24px 80px rgba(143,107,74,.15)",
+
+    // Consolidated warm hover glow — reuses premium's exact hue
+    // (143,107,74) at a smaller offset/blur suited to routine
+    // hover states, replacing the four near-duplicate warm
+    // shadows found in ActivityItem/DecisionItem/StatCard.
+    hover: "0 10px 28px rgba(143,107,74,0.12)",
   },
 
   // ========================================================
@@ -310,6 +339,12 @@ export const tokens = {
     normal: "250ms",
 
     slow: "350ms",
+
+    // Shared entrance/hover easing curve already reused by
+    // convention across headquarters/* (Hero, MissionCard,
+    // ActivityFeed, DecisionFeed, AIInsight, StatCard,
+    // ActivityItem, DecisionItem) — previously uncaptured.
+    easing: [0.22, 1, 0.36, 1],
   },
 
   // ========================================================

@@ -2,6 +2,7 @@
 
 import { LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
+import { tokens } from "@/lib/theme/tokens";
 
 interface ActivityItemProps {
     time: string;
@@ -88,11 +89,13 @@ export default function ActivityItem({
                             items-center
                             justify-center
                             rounded-full
-                            bg-[#F8F4EE]
                             transition-shadow
                             duration-300
-                            group-hover:shadow-[0_5px_15px_rgba(184,138,75,0.12)]
+                            group-hover:shadow-[0_10px_28px_rgba(143,107,74,0.12)]
                         "
+                        style={{
+                            background: tokens.semantic.surfaceWarm,
+                        }}
                     >
                         <Icon
                             size={18}
