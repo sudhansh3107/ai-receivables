@@ -50,10 +50,6 @@ export default function TopBar({
               strokeWidth={1.9}
             />
 
-            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#C96A50] text-[9px] font-semibold text-white">
-              2
-            </span>
-
           </button>
 
           {/* Assign Work */}

@@ -12,6 +12,7 @@ interface DecisionItemProps {
   title: string;
   company: string;
   subtitle: string;
+  reasons?: string[] | null;
 }
 
 export default function DecisionItem({
@@ -21,6 +22,7 @@ export default function DecisionItem({
   title,
   company,
   subtitle,
+  reasons,
 }: DecisionItemProps) {
   return (
     <motion.button
@@ -97,6 +99,17 @@ export default function DecisionItem({
           <span className="mt-3 block text-[12px] leading-[16px] text-[#6B645C]">
             {subtitle}
           </span>
+
+          <p
+            className="mt-1.5 text-[11px] leading-[15px]"
+            style={{
+              color: tokens.semantic.textMuted,
+            }}
+          >
+            {reasons && reasons.length > 0
+              ? `What I confirmed: ${reasons.join(", ")}`
+              : "Review recommended based on low confidence."}
+          </p>
 
         </div>
 

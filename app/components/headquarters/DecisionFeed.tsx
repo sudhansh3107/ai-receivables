@@ -81,6 +81,7 @@ export default function DecisionFeed() {
                   invoice.amount,
                   invoice.currency
                 )}`}
+                reasons={invoice.confidenceReasons}
               />
             ))}
 

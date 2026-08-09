@@ -119,6 +119,7 @@ export interface InvoiceNeedingReview {
     customerName: string;
     amount: number;
     currency: string;
+    confidenceReasons: string[] | null;
 }
 
 interface InvoiceNeedingReviewRow {
@@ -126,6 +127,7 @@ interface InvoiceNeedingReviewRow {
     invoice_number: string;
     invoice_amount: number;
     currency: string;
+    invoice_confidence_reasons: string[] | null;
     customers: { company_name: string } | null;
 }
 
@@ -140,6 +142,7 @@ export async function getInvoicesNeedingReviewDetails(
             invoice_number,
             invoice_amount,
             currency,
+            invoice_confidence_reasons,
             customers (
                 company_name
             )
@@ -162,6 +165,7 @@ export async function getInvoicesNeedingReviewDetails(
             invoice.customers?.company_name ?? "Unknown customer",
         amount: Number(invoice.invoice_amount),
         currency: invoice.currency,
+        confidenceReasons: invoice.invoice_confidence_reasons,
     }));
 }
 

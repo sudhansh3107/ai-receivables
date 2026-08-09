@@ -68,7 +68,7 @@ export default function AIInsight() {
               />
 
               <h2 className="text-2xl font-semibold tracking-[-0.02em] text-[#1A1A1A]">
-                AI Insight
+                AI Insights
               </h2>
 
             </div>

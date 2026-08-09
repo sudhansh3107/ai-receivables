@@ -58,7 +58,7 @@ As installed in `package.json`:
 - **AI extraction**: `services/server/invoiceExtractionService.ts` — signed Storage URL sent to OpenAI structured-output API.
 - **Realtime dashboard**: `app/hooks/useDashboard.ts` subscribes to Supabase Realtime (`postgres_changes`) across `payments`, `invoices`, `customers`, `activity_log`, `employee_activity`, `invoice_files`, `upload_sessions`, `reminders` and debounce-refreshes `services/server/dashboardService.ts` data.
 - **Gmail ingestion** (`app/api/auth/gmail/*`, `app/api/gmail/messages/*`, `lib/gmail/parse-email.ts`): OAuth + message fetch/normalize, functional but **not wired** into the invoice processing pipeline.
-- **Route structure**: only two routes exist — `/` (root dashboard, using `app/components/headquarters/*`) and `/playground` (a separate demo layout using `app/components/dashboard/*`). The sidebar nav (`app/components/sidebar/navItems.tsx`) links to 6 additional routes (`/dashboard`, `/employees`, `/invoices`, `/customers`, `/payments`, `/approvals`, `/insights`, `/settings`) that do not exist yet.
+- **Route structure**: only one page route exists — `/` (root dashboard, using `app/components/headquarters/*`). The sidebar nav (`app/components/sidebar/navItems.tsx`) has 8 items total: "Mission Control" links to the real `/` route; the other 7 (`/employees`, `/invoices`, `/customers`, `/payments`, `/approvals`, `/insights`, `/settings`) are intentionally rendered as disabled, non-navigating "Soon" placeholders rather than live links — they do not 404.
 
 ## Current MVP Capabilities
 
@@ -80,13 +80,11 @@ Actually implemented and working today:
 - **No application authentication.** No Supabase Auth, no session/login, no middleware — anon key has direct client-side table/storage access.
 - **No multi-tenancy / organization boundary.** All data is effectively single-tenant; no `organization_id` or equivalent scoping exists in the schema.
 - **No RLS/security review performed.** Row-level security posture on Supabase tables/buckets is unverified.
-- **Manual invoice entry is a stub.** `ManualInvoice.tsx` renders only `"Form coming next..."`.
-- **Missing navigation routes.** 6 of 8 sidebar links 404 (no corresponding `app/` route folders).
+- **Manual invoice entry is a stub.** `ManualInvoice.tsx` renders an honest "not available yet" placeholder rather than a real form.
 - **Gmail → invoice pipeline is disconnected.** Email parsing exists but does not feed `processingengine.ts`.
-- **Hardcoded review/approval UI values.** The upload-complete screen shows "Approved Automatically" / "Needs Your Review: 0" as static values, not derived from `invoice_confidence_level` or any real review state.
 - **Trust Architecture is not implemented.** No policy table, no approval/escalation workflow, no multi-dimensional confidence, no autonomy levels.
 - **No Digital Employee lifecycle model.** No onboarding/probation/performance-review/trust-level state anywhere in the schema or code.
-- **Orphaned/duplicate dashboard components.** `app/components/headquarters/{Headquarters,KPIGrid,StatCard,MetricsPanel,HeroContent,DecisionItem,DecisionQueue,ExecutiveBriefing}.tsx` are never imported. The `headquarters/*` (used on `/`) and `dashboard/*` (used on `/playground`) component sets duplicate similar UI concepts without being unified.
+- **Orphaned headquarters components.** `app/components/headquarters/{Headquarters,KPIGrid,DecisionQueue,ExecutiveBriefing}.tsx` are never imported and remain leftover from an earlier UI iteration. `StatCard`, `MetricsPanel`, `HeroContent`, and `DecisionItem` are used and current.
 
 ## Data Model Rules
 

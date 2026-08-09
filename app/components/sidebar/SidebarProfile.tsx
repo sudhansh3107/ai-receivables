@@ -19,11 +19,11 @@ export default function SidebarProfile() {
       {/* User */}
       <div className="ml-3 flex-1 text-left">
         <p className="text-[14px] font-semibold leading-none text-[#F5EFE7]">
-          Arjun Mehta
+          AR Employee
         </p>
 
         <p className="mt-1 text-[12px] leading-none text-[#8D8D8D]">
-          Acme Corp
+          Employee #001
         </p>
       </div>
 
