@@ -1,0 +1,172 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.customers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_name text NOT NULL,
+  contact_name text,
+  email text,
+  phone text,
+  gst_number text UNIQUE,
+  status text NOT NULL CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text, 'blocked'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  external_customer_id text,
+  CONSTRAINT customers_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.invoices (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  customer_id uuid NOT NULL,
+  upload_session_id uuid,
+  invoice_number text NOT NULL,
+  invoice_date date NOT NULL,
+  due_date date NOT NULL,
+  currency text NOT NULL DEFAULT 'INR'::text CHECK (currency = ANY (ARRAY['INR'::text, 'USD'::text, 'EUR'::text, 'AED'::text, 'GBP'::text])),
+  invoice_amount numeric NOT NULL CHECK (invoice_amount > 0::numeric),
+  balance_due numeric NOT NULL CHECK (balance_due >= 0::numeric),
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'partial'::text, 'paid'::text, 'overdue'::text, 'cancelled'::text])),
+  source_type text NOT NULL DEFAULT 'upload'::text CHECK (source_type = ANY (ARRAY['upload'::text, 'email'::text, 'erp'::text, 'manual'::text, 'api'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  invoice_confidence_score numeric,
+  invoice_confidence_level text CHECK (invoice_confidence_level IS NULL OR (invoice_confidence_level = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text]))),
+  invoice_confidence_reasons jsonb,
+  payment_terms integer DEFAULT 30,
+  CONSTRAINT invoices_pkey PRIMARY KEY (id),
+  CONSTRAINT invoices_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
+  CONSTRAINT invoices_upload_session_id_fkey FOREIGN KEY (upload_session_id) REFERENCES public.upload_sessions(id)
+);
+CREATE TABLE public.upload_sessions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  source_type text NOT NULL DEFAULT 'upload'::text CHECK (source_type = ANY (ARRAY['upload'::text, 'email'::text, 'erp'::text, 'api'::text, 'manual'::text])),
+  original_filename text,
+  storage_path text,
+  processing_status text NOT NULL DEFAULT 'processing'::text CHECK (processing_status = ANY (ARRAY['uploaded'::text, 'processing'::text, 'completed'::text, 'failed'::text, 'partial'::text, 'cancelled'::text])),
+  total_files bigint NOT NULL DEFAULT '1'::bigint,
+  processed_files bigint NOT NULL DEFAULT '0'::bigint,
+  uploaded_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT upload_sessions_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.payments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  invoice_id uuid NOT NULL,
+  customer_id uuid NOT NULL,
+  amount numeric NOT NULL CHECK (amount > 0::numeric),
+  payment_date date NOT NULL,
+  payment_method text CHECK (payment_method IS NULL OR (payment_method = ANY (ARRAY['bank_transfer'::text, 'upi'::text, 'cheque'::text, 'cash'::text, 'credit_card'::text, 'debit_card'::text, 'other'::text]))),
+  payment_reference text,
+  notes text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT payments_pkey PRIMARY KEY (id),
+  CONSTRAINT payments_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id),
+  CONSTRAINT payments_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id)
+);
+CREATE TABLE public.customer_insights (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  customer_id uuid NOT NULL UNIQUE,
+  payment_confidence numeric NOT NULL DEFAULT '0'::numeric CHECK (payment_confidence >= 0::numeric AND payment_confidence <= 100::numeric),
+  risk_level text NOT NULL DEFAULT 'unknown'::text CHECK (risk_level = ANY (ARRAY['low'::text, 'moderate'::text, 'high'::text, 'insufficient_history'::text, 'limited_history'::text])),
+  average_delay_days numeric NOT NULL DEFAULT '0'::bigint CHECK (average_delay_days >= '-3650'::integer::numeric),
+  on_time_payment_rate numeric NOT NULL DEFAULT '0'::numeric CHECK (on_time_payment_rate >= 0::numeric AND on_time_payment_rate <= 100::numeric),
+  predicted_payment_days bigint,
+  ai_summary text,
+  last_analysed_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  total_invoices integer NOT NULL DEFAULT 0,
+  paid_invoice_count integer NOT NULL DEFAULT 0,
+  open_invoice_count integer NOT NULL DEFAULT 0,
+  total_invoiced_amount numeric NOT NULL DEFAULT 0,
+  total_collected_amount numeric NOT NULL DEFAULT 0,
+  current_outstanding_amount numeric NOT NULL DEFAULT 0,
+  overdue_amount numeric NOT NULL DEFAULT 0,
+  overdue_invoice_count integer NOT NULL DEFAULT 0,
+  early_payment_rate numeric,
+  late_payment_rate numeric,
+  average_late_payment_days numeric,
+  largest_delay_days integer,
+  last_payment_delay_days integer,
+  payment_consistency_score numeric,
+  last_payment_date date,
+  payment_count integer NOT NULL DEFAULT 0,
+  partial_payment_invoice_count integer NOT NULL DEFAULT 0,
+  average_payments_per_invoice numeric NOT NULL DEFAULT 0,
+  CONSTRAINT customer_insights_pkey PRIMARY KEY (id),
+  CONSTRAINT customer_insights_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id)
+);
+CREATE TABLE public.reminders (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  invoice_id uuid NOT NULL,
+  customer_id uuid NOT NULL,
+  channel text NOT NULL DEFAULT 'email'::text CHECK (channel = ANY (ARRAY['email'::text, 'sms'::text, 'whatsapp'::text, 'phone'::text])),
+  reminder_stage bigint NOT NULL DEFAULT '1'::bigint,
+  scheduled_at timestamp with time zone NOT NULL,
+  sent_at timestamp with time zone,
+  delivery_status text NOT NULL DEFAULT 'pending'::text CHECK (delivery_status = ANY (ARRAY['pending'::text, 'queued'::text, 'sent'::text, 'delivered'::text, 'failed'::text, 'cancelled'::text])),
+  response_received boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT reminders_pkey PRIMARY KEY (id),
+  CONSTRAINT reminders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
+  CONSTRAINT reminders_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id)
+);
+CREATE TABLE public.invoice_files (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  invoice_id uuid,
+  upload_session_id uuid NOT NULL,
+  file_name text NOT NULL,
+  storage_path text NOT NULL,
+  mime_type text NOT NULL CHECK (mime_type = ANY (ARRAY['application/pdf'::text, 'image/png'::text, 'image/jpeg'::text, 'image/jpg'::text])),
+  file_size_bytes bigint NOT NULL CHECK (file_size_bytes > 0),
+  processing_status text NOT NULL DEFAULT 'uploaded'::text CHECK (processing_status = ANY (ARRAY['uploaded'::text, 'processing'::text, 'processed'::text, 'failed'::text])),
+  failure_reason text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT invoice_files_pkey PRIMARY KEY (id),
+  CONSTRAINT invoice_files_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id),
+  CONSTRAINT invoice_files_upload_session_id_fkey FOREIGN KEY (upload_session_id) REFERENCES public.upload_sessions(id)
+);
+CREATE TABLE public.activity_log (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  invoice_id uuid,
+  customer_id uuid,
+  activity_type text NOT NULL CHECK (activity_type = ANY (ARRAY['invoice_created'::text, 'invoice_validated'::text, 'invoice_uploaded'::text, 'invoice_confidence_calculated'::text, 'customer_created'::text, 'customer_matched'::text, 'reminder_scheduled'::text, 'reminder_sent'::text, 'payment_recorded'::text, 'invoice_paid'::text, 'invoice_partially_paid'::text, 'invoice_overdue'::text, 'customer_insights_updated'::text])),
+  description text NOT NULL,
+  metadata jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT activity_log_pkey PRIMARY KEY (id),
+  CONSTRAINT activity_log_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id),
+  CONSTRAINT activity_log_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id)
+);
+CREATE TABLE public.employee_activity (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  upload_session_id uuid,
+  invoice_file_id uuid,
+  activity_type text NOT NULL,
+  message text NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT employee_activity_pkey PRIMARY KEY (id),
+  CONSTRAINT employee_activity_upload_session_id_fkey FOREIGN KEY (upload_session_id) REFERENCES public.upload_sessions(id),
+  CONSTRAINT employee_activity_invoice_file_id_fkey FOREIGN KEY (invoice_file_id) REFERENCES public.invoice_files(id)
+);
+CREATE TABLE public.emails (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  gmail_message_id text NOT NULL UNIQUE,
+  gmail_thread_id text NOT NULL,
+  from_email text NOT NULL,
+  to_emails ARRAY NOT NULL DEFAULT '{}'::text[],
+  cc_emails ARRAY NOT NULL DEFAULT '{}'::text[],
+  subject text,
+  received_at timestamp with time zone NOT NULL,
+  text_body text,
+  html_body text,
+  attachments jsonb NOT NULL DEFAULT '[]'::jsonb,
+  classification text,
+  classification_confidence numeric,
+  processing_status text NOT NULL DEFAULT 'received'::text CHECK (processing_status = ANY (ARRAY['received'::text, 'processing'::text, 'processed'::text, 'failed'::text, 'ignored'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT emails_pkey PRIMARY KEY (id)
+);
