@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { ActivityType } from "@/lib/activityTypes";
-import { mapActivityLog } from "./activityMapper";
+import { mapActivityLog, EmployeeActivity } from "./activityMapper";
 
 export interface ActivityLogInput {
     invoiceId?: string | null;
@@ -92,4 +92,44 @@ export async function getRecentActivity(limit = 3) {
     if (error) throw error;
 
     return data.map(mapActivityLog);
+}
+
+// mapActivityLog()'s `time` is HH:MM only (no date), which is
+// ambiguous once results span more than one day. Rather than
+// changing the shared mapper (used by the live dashboard),
+// getActivityHistory carries the raw created_at alongside each
+// mapped entry so callers can group by calendar day themselves.
+export interface ActivityHistoryEntry extends EmployeeActivity {
+    createdAt: string;
+}
+
+// Full chronological activity history for the /activity page — same
+// table and joins as getRecentActivity, but with no today-only date
+// filter. `limit` is an MVP safety cap on the query, not a claim of
+// unlimited historical data; there is no pagination beyond it.
+export async function getActivityHistory(
+    limit = 200
+): Promise<ActivityHistoryEntry[]> {
+    const { data, error } = await supabase
+        .from("activity_log")
+        .select(`
+            *,
+            invoices (
+                invoice_number
+            ),
+            customers (
+                company_name
+            )
+        `)
+        .order("created_at", {
+            ascending: false,
+        })
+        .limit(limit);
+
+    if (error) throw error;
+
+    return data.map((row) => ({
+        ...mapActivityLog(row),
+        createdAt: row.created_at,
+    }));
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Clock3, FileWarning, LucideIcon } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Clock3, FileWarning, LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import AppShell from "../components/layout/AppShell";
@@ -88,6 +89,26 @@ export default function DecisionsPage() {
     return (
         <AppShell>
             <Page>
+                <Link
+                    href="/"
+                    className="
+                        mb-3
+                        inline-flex
+                        w-fit
+                        items-center
+                        gap-1.5
+                        text-[13px]
+                        font-medium
+                        text-[#8B847C]
+                        transition-colors
+                        duration-200
+                        hover:text-[#8F6B4A]
+                    "
+                >
+                    <ArrowLeft size={15} strokeWidth={2} />
+                    Back to Headquarters
+                </Link>
+
                 <h1 className="text-2xl font-semibold tracking-[-0.02em] text-[#1A1A1A]">
                     Decisions
                 </h1>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "motion/react";
 import {
   ArrowRight,
@@ -108,7 +109,8 @@ export default function ActivityFeed() {
 
         {/* Footer */}
 
-        <button
+        <Link
+          href="/activity"
           className="
             -mt-2
             flex
@@ -130,7 +132,7 @@ export default function ActivityFeed() {
             strokeWidth={2}
           />
 
-        </button>
+        </Link>
 
       </Card>
     </motion.div>
