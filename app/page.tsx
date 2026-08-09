@@ -3,6 +3,8 @@
 import AppShell from "./components/layout/AppShell";
 import Page from "./components/ui/Page";
 
+import { DashboardProvider } from "./hooks/useDashboard";
+
 import Hero from "./components/headquarters/Hero";
 import MissionCard from "./components/headquarters/MissionCard";
 import ActivityFeed from "./components/headquarters/ActivityFeed";
@@ -11,50 +13,52 @@ import AIInsight from "./components/headquarters/AIInsight";
 
 export default function Home() {
   return (
-    <AppShell>
-      <Page>
+    <DashboardProvider>
+      <AppShell>
+        <Page>
 
-        <Hero />
+          <Hero />
 
-        <div className="mt-5 grid grid-cols-12 gap-8">
+          <div className="mt-5 grid grid-cols-12 gap-8">
 
-          {/* Left */}
+            {/* Left */}
 
-          <div className="col-span-3">
-            <MissionCard />
-          </div>
+            <div className="col-span-3">
+              <MissionCard />
+            </div>
 
-          {/* Right */}
+            {/* Right */}
 
-          <div className="col-span-9">
+            <div className="col-span-9">
 
-            <div className="grid grid-cols-9 gap-6">
+              <div className="grid grid-cols-9 gap-6">
 
-              {/* Employee Activity */}
+                {/* Employee Activity */}
 
-              <div className="col-span-5">
-                <ActivityFeed />
-              </div>
+                <div className="col-span-5">
+                  <ActivityFeed />
+                </div>
 
-              {/* Needs Your Decision */}
+                {/* Needs Your Decision */}
 
-              <div className="col-span-4">
-                <DecisionFeed />
-              </div>
+                <div className="col-span-4">
+                  <DecisionFeed />
+                </div>
 
-              {/* AI Insight */}
+                {/* AI Insight */}
 
-              <div className="col-span-9">
-                <AIInsight />
+                <div className="col-span-9">
+                  <AIInsight />
+                </div>
+
               </div>
 
             </div>
 
           </div>
 
-        </div>
-
-      </Page>
-    </AppShell>
+        </Page>
+      </AppShell>
+    </DashboardProvider>
   );
 }
