@@ -5,6 +5,10 @@ import { createUploadSession,updateProcessedFiles,completeUploadSession } from "
 import ModalHeader from "@/app/components/shared/ModalHeader";
 import { uploadInvoice } from "@/services/storageService";
 import { createInvoiceFile } from "@/services/invoiceFileService";
+import {
+    getUploadSessionConfidenceBreakdown,
+    type UploadSessionConfidenceBreakdown,
+} from "@/services/invoiceService";
 import { useUploadSession } from "@/app/hooks/useUploadSession";
 import { processInvoiceAction } from "@/app/actions/processInvoiceAction";
 import { useRouter } from "next/navigation";
@@ -33,6 +37,8 @@ export default function UploadInvoice({
     const session = useUploadSession(uploadSessionId);
     const [completed, setCompleted] =
     useState(false);
+    const [confidenceBreakdown, setConfidenceBreakdown] =
+        useState<UploadSessionConfidenceBreakdown | null>(null);
     const router = useRouter();
     const handleClose = () => {
     router.refresh();
@@ -49,7 +55,18 @@ export default function UploadInvoice({
         setCompleted(true);
     }
 }, [session, successShown]);
-    
+
+    useEffect(() => {
+        if (!completed || !uploadSessionId) return;
+
+        getUploadSessionConfidenceBreakdown(uploadSessionId)
+            .then(setConfidenceBreakdown)
+            .catch((error) => {
+                console.error(error);
+            });
+    }, [completed, uploadSessionId]);
+
+
     const onDrop = useCallback((acceptedFiles: File[]) => {
         if (acceptedFiles.length === 0) return;
 
@@ -206,11 +223,13 @@ if (completed) {
                     <div className="flex items-center justify-between">
 
                         <span className="text-[15px] text-[#6E6963]">
-                            Approved Automatically
+                            High Confidence
                         </span>
 
                         <span className="text-[16px] font-semibold text-[#5F8F58]">
-                            {session?.processed_files}
+                            {confidenceBreakdown
+                                ? confidenceBreakdown.highConfidence
+                                : "—"}
                         </span>
 
                     </div>
@@ -218,11 +237,27 @@ if (completed) {
                     <div className="flex items-center justify-between">
 
                         <span className="text-[15px] text-[#6E6963]">
-                            Needs Your Review
+                            Review Recommended
                         </span>
 
                         <span className="text-[16px] font-semibold text-[#A47A45]">
-                            0
+                            {confidenceBreakdown
+                                ? confidenceBreakdown.reviewRecommended
+                                : "—"}
+                        </span>
+
+                    </div>
+
+                    <div className="flex items-center justify-between">
+
+                        <span className="text-[15px] text-[#6E6963]">
+                            Needs Review
+                        </span>
+
+                        <span className="text-[16px] font-semibold text-[#C96D55]">
+                            {confidenceBreakdown
+                                ? confidenceBreakdown.needsReview
+                                : "—"}
                         </span>
 
                     </div>

@@ -9,6 +9,7 @@ interface SidebarItemProps {
   label: string;
   icon: LucideIcon;
   active?: boolean;
+  disabled?: boolean;
 }
 
 export default function SidebarItem({
@@ -16,43 +17,68 @@ export default function SidebarItem({
   label,
   icon: Icon,
   active = false,
+  disabled = false,
 }: SidebarItemProps) {
-  return (
-    <Link href={href}>
-      <motion.div
-        whileHover={{
-          x: 2,
-          backgroundColor: active ? "#4A3927" : "#1C1C1C",
-        }}
-        transition={{
-          duration: 0.2,
-          ease: "easeOut",
-        }}
-        className="group relative flex h-12 items-center rounded-2xl px-4"
-        style={{
-          backgroundColor: active ? "#4A3927" : "rgba(255,255,255,0)",
-        }}
-      >
-        <Icon
-          size={18}
-          strokeWidth={1.8}
-          className={`transition-colors duration-200 ${
-            active
-              ? "text-[#F7F3EE]"
-              : "text-[#8F8F8F] group-hover:text-white"
-          }`}
-        />
+  const content = (
+    <motion.div
+      whileHover={
+        disabled
+          ? undefined
+          : {
+              x: 2,
+              backgroundColor: active ? "#4A3927" : "#1C1C1C",
+            }
+      }
+      transition={{
+        duration: 0.2,
+        ease: "easeOut",
+      }}
+      className={`group relative flex h-12 items-center rounded-2xl px-4 ${
+        disabled ? "cursor-not-allowed" : ""
+      }`}
+      style={{
+        backgroundColor: active ? "#4A3927" : "rgba(255,255,255,0)",
+      }}
+    >
+      <Icon
+        size={18}
+        strokeWidth={1.8}
+        className={`transition-colors duration-200 ${
+          active
+            ? "text-[#F7F3EE]"
+            : disabled
+            ? "text-[#5C5C5C]"
+            : "text-[#8F8F8F] group-hover:text-white"
+        }`}
+      />
 
-        <span
-          className={`ml-3 text-[14px] font-medium tracking-[-0.02em] transition-colors duration-200 ${
-            active
-              ? "text-[#F7F3EE]"
-              : "text-[#B7B7B7] group-hover:text-white"
-          }`}
-        >
-          {label}
+      <span
+        className={`ml-3 flex-1 text-[14px] font-medium tracking-[-0.02em] transition-colors duration-200 ${
+          active
+            ? "text-[#F7F3EE]"
+            : disabled
+            ? "text-[#6B6B6B]"
+            : "text-[#B7B7B7] group-hover:text-white"
+        }`}
+      >
+        {label}
+      </span>
+
+      {disabled && (
+        <span className="rounded-full bg-white/5 px-2 py-[3px] text-[10px] font-medium text-[#7A7A7A]">
+          Soon
         </span>
-      </motion.div>
-    </Link>
+      )}
+    </motion.div>
   );
+
+  if (disabled) {
+    return (
+      <div aria-disabled="true" className="select-none">
+        {content}
+      </div>
+    );
+  }
+
+  return <Link href={href}>{content}</Link>;
 }

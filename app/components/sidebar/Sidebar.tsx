@@ -1,11 +1,15 @@
 "use client";
 
+import { usePathname } from "next/navigation";
+
 import SidebarLogo from "./SidebarLogo";
 import SidebarItem from "./SidebarItem";
 import SidebarProfile from "./SidebarProfile";
 import { navItems } from "./navItems";
 
 export default function Sidebar() {
+  const pathname = usePathname();
+
   return (
     <aside
       className="flex h-screen w-[220px] shrink-0 flex-col border-r"
@@ -21,11 +25,11 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="mt-10 flex flex-col gap-1 px-4">
-        {navItems.map((item, index) => (
+        {navItems.map((item) => (
           <SidebarItem
             key={item.label}
             {...item}
-            active={index === 0}
+            active={pathname === item.href}
           />
         ))}
       </nav>

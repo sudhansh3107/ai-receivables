@@ -1,63 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import {
   ArrowRight,
   Sparkles,
 } from "lucide-react";
 
 import Card from "../ui/Card";
+import { useDashboard } from "@/app/hooks/useDashboard";
 
-const insights = [
-  {
-    noticed:
-      "ABC Industries has consistently paid within 48 hours after the second reminder over the last four invoices.",
-    action:
-      "Continue Reminder Stage 2. Escalate only if payment is not received within 5 days.",
-  },
-  {
-    noticed:
-      "Global Solutions has requested payment extensions on three consecutive invoices, indicating a recurring cash flow issue.",
-    action:
-      "Approve the current extension request, but require manual approval for future invoices.",
-  },
-  {
-    noticed:
-      "Three overdue customers account for nearly 42% of all outstanding receivables this month.",
-    action:
-      "Prioritize direct outreach before initiating automated escalation workflows.",
-  },
-  {
-    noticed:
-      "TechNova has paid every invoice before its due date during the past six months.",
-    action:
-      "Reduce reminder frequency to improve customer experience while maintaining payment behaviour.",
-  },
-  {
-    noticed:
-      "Collection performance is ahead of last month despite fewer reminders being sent.",
-    action:
-      "Maintain the current reminder strategy. No workflow changes are recommended.",
-  },
-  {
-    noticed:
-      "Two invoices require your approval before settlement offers can be sent to customers.",
-    action:
-      "Review the pending approvals to prevent unnecessary collection delays.",
-  },
-];
+function formatUpdatedAt(dateString: string) {
+  const updated = new Date(dateString);
+  const diffMinutes = Math.round(
+    (Date.now() - updated.getTime()) / 60000
+  );
+
+  if (diffMinutes < 1) return "Updated just now";
+  if (diffMinutes < 60) return `Updated ${diffMinutes}m ago`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `Updated ${diffHours}h ago`;
+
+  return `Updated ${updated.toLocaleDateString()}`;
+}
 
 export default function AIInsight() {
-  const [current, setCurrent] = useState(0);
+  const {
+    dashboard,
+    loading,
+    error,
+  } = useDashboard();
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrent((prev) => (prev + 1) % insights.length);
-    }, 10000);
+  if (loading || error || !dashboard) {
+    return null;
+  }
 
-    return () => clearInterval(interval);
-  }, []);
+  const { insight } = dashboard;
 
   return (
     <motion.div
@@ -101,31 +79,17 @@ export default function AIInsight() {
                 Employee Noticed
               </p>
 
-              <AnimatePresence mode="wait">
-
-                <motion.p
-                  key={`noticed-${current}`}
-                  initial={{
-                    opacity: 0,
-                    y: 8,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                  }}
-                  exit={{
-                    opacity: 0,
-                    y: -8,
-                  }}
-                  transition={{
-                    duration: 0.35,
-                  }}
-                  className="mt-3 text-[15px] leading-8 text-[#2B2B2B]"
-                >
-                  {insights[current].noticed}
-                </motion.p>
-
-              </AnimatePresence>
+              {insight ? (
+                <p className="mt-3 text-[15px] leading-8 text-[#2B2B2B]">
+                  {insight.noticed}
+                </p>
+              ) : (
+                <p className="mt-3 text-[15px] leading-8 text-[#8C857C]">
+                  No insight yet. I&apos;ll have something to share
+                  once I&apos;ve processed enough invoices for a
+                  customer.
+                </p>
+              )}
 
             </div>
 
@@ -149,42 +113,24 @@ export default function AIInsight() {
 
             <div className="pl-[22px]">
 
-              <AnimatePresence mode="wait">
-
-                <motion.p
-                  key={`action-${current}`}
-                  initial={{
-                    opacity: 0,
-                    y: 8,
-                  }}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                  }}
-                  exit={{
-                    opacity: 0,
-                    y: -8,
-                  }}
-                  transition={{
-                    duration: 0.35,
-                  }}
-                  className="mt-4 text-[15px] leading-8 text-[#2B2B2B]"
-                >
-                  {insights[current].action}
-                </motion.p>
-
-              </AnimatePresence>
+              <p className="mt-4 text-[15px] leading-8 text-[#2B2B2B]">
+                {insight?.nextAction ?? "No action scheduled right now."}
+              </p>
 
               <div className="my-5 h-px bg-[#EFE8E0]" />
 
               <div>
 
                 <p className="text-[12px] font-medium text-[#8C857C]">
-                  Updated just now
+                  {insight
+                    ? formatUpdatedAt(insight.updatedAt)
+                    : "Not analysed yet"}
                 </p>
 
                 <p className="mt-1 text-[11px] text-[#A7A199]">
-                  Reviewing customer behaviour continuously
+                  {insight
+                    ? insight.customerName
+                    : "Awaiting invoice activity"}
                 </p>
 
               </div>

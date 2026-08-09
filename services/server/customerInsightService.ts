@@ -1226,6 +1226,56 @@ export async function upsertCustomerInsights(
     return data;
 }
 
+export interface LatestCustomerInsight {
+    customerId: string;
+    customerName: string;
+    aiSummary: string;
+    lastAnalysedAt: string;
+}
+
+interface CustomerInsightRow {
+    customer_id: string;
+    ai_summary: string | null;
+    last_analysed_at: string;
+    customers: { company_name: string } | null;
+}
+
+export async function getLatestCustomerInsight(): Promise<LatestCustomerInsight | null> {
+    const { data, error } = await supabase
+        .from("customer_insights")
+        .select(
+            `
+            customer_id,
+            ai_summary,
+            last_analysed_at,
+            customers (
+                company_name
+            )
+        `
+        )
+        .not("ai_summary", "is", null)
+        .order("last_analysed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+        throw error;
+    }
+
+    const row = data as unknown as CustomerInsightRow | null;
+
+    if (!row || !row.ai_summary) {
+        return null;
+    }
+
+    return {
+        customerId: row.customer_id,
+        customerName: row.customers?.company_name ?? "A customer",
+        aiSummary: row.ai_summary,
+        lastAnalysedAt: row.last_analysed_at,
+    };
+}
+
 export async function refreshCustomerInsights(
     customerId: string,
     uploadSessionId?: string

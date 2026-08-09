@@ -50,3 +50,32 @@ export async function scheduleReminder(
 
     return data;
 }
+
+export interface NextReminder {
+    reminderStage: number;
+    scheduledAt: string;
+    channel: string;
+}
+
+export async function getNextReminderForCustomer(
+    customerId: string
+): Promise<NextReminder | null> {
+    const { data, error } = await supabase
+        .from("reminders")
+        .select("reminder_stage, scheduled_at, channel")
+        .eq("customer_id", customerId)
+        .eq("delivery_status", "pending")
+        .order("scheduled_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) throw error;
+
+    if (!data) return null;
+
+    return {
+        reminderStage: data.reminder_stage,
+        scheduledAt: data.scheduled_at,
+        channel: data.channel,
+    };
+}

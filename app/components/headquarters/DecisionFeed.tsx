@@ -3,14 +3,35 @@
 import { motion } from "motion/react";
 import {
   ArrowRight,
-  CalendarDays,
-  Handshake,
+  FileWarning,
 } from "lucide-react";
 
 import Card from "../ui/Card";
 import DecisionItem from "./DecisionItem";
+import { useDashboard } from "@/app/hooks/useDashboard";
+
+function formatInvoiceAmount(amount: number, currency: string) {
+  const locale = currency === "INR" ? "en-IN" : "en-US";
+
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+  }).format(amount);
+}
 
 export default function DecisionFeed() {
+  const {
+    dashboard,
+    loading,
+    error,
+  } = useDashboard();
+
+  if (loading || error || !dashboard) {
+    return null;
+  }
+
+  const { approvals } = dashboard;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -30,13 +51,13 @@ export default function DecisionFeed() {
         <div className="flex items-center justify-between px-3 py-2">
 
           <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-[#1A1A1A]">
-            Needs Your Decision
+            Needs Your Review
           </h2>
 
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#FBE8E6]">
 
             <span className="text-[13px] font-semibold text-[#C96D55]">
-              2
+              {approvals.length}
             </span>
 
           </div>
@@ -45,43 +66,51 @@ export default function DecisionFeed() {
 
         {/* Feed */}
 
-        <div className="mt-3 space-y-4 px-3">
+        {approvals.length > 0 ? (
+          <div className="mt-3 space-y-4 px-3">
 
-          <DecisionItem
-            icon={Handshake}
-            iconColor="#C96D55"
-            iconBackground="#FBE8E6"
-            title="Approve settlement with"
-            company="ABC Industries"
-            subtitle="Invoice #INV-2391 · ₹82,000"
-          />
+            {approvals.map((invoice) => (
+              <DecisionItem
+                key={invoice.id}
+                icon={FileWarning}
+                iconColor="#C96D55"
+                iconBackground="#FBE8E6"
+                title="Low-confidence extraction"
+                company={invoice.customerName}
+                subtitle={`Invoice ${invoice.invoiceNumber} · ${formatInvoiceAmount(
+                  invoice.amount,
+                  invoice.currency
+                )}`}
+              />
+            ))}
 
-          <DecisionItem
-            icon={CalendarDays}
-            iconColor="#C9A66B"
-            iconBackground="#F7EAD6"
-            title="Approve extension request"
-            company="Global Solutions"
-            subtitle="Invoice #INV-2387 · 15 days"
-          />
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center px-8 text-center">
 
-        </div>
+            <p className="text-[14px] leading-6 text-[#8C857C]">
+              No invoices need your review right now.
+            </p>
+
+          </div>
+        )}
 
         {/* Footer */}
 
         <button
+          disabled
+          title="Approvals isn't available yet"
           className="
             mt-4
             flex
+            cursor-not-allowed
             items-center
             gap-2
             px-7
             py-4
             text-[15px]
             font-semibold
-            text-[#2B211A]
-            transition
-            hover:text-[#8F6B4A]
+            text-[#B3ABA0]
           "
         >
           View all approvals
