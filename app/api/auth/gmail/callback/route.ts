@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { googleOAuth2Client } from "@/lib/google";
+import { googleOAuth2Client, getGmailClient } from "@/lib/google";
 import { cookies } from "next/headers";
+import { upsertGmailConnection } from "@/services/server/gmailConnectionService";
 
 export async function GET(
     request: NextRequest
@@ -63,10 +64,61 @@ cookieStore.set(
             }
         );
 
+        // Best-effort durable persistence alongside the existing
+        // cookie flow. Never let a failure here break the response
+        // the browser flow already depends on — cookies above are
+        // already set regardless of what happens next.
+        let durableConnectionPersisted = false;
+
+        if (tokens.access_token && tokens.refresh_token) {
+            try {
+                const gmail = getGmailClient(
+                    tokens.access_token,
+                    tokens.refresh_token
+                );
+
+                const profile =
+                    await gmail.users.getProfile({
+                        userId: "me",
+                    });
+
+                const googleAccountEmail =
+                    profile.data.emailAddress;
+
+                if (googleAccountEmail) {
+                    await upsertGmailConnection(
+                        googleAccountEmail,
+                        tokens.refresh_token
+                    );
+
+                    durableConnectionPersisted = true;
+
+                    console.log(
+                        "🔒 Durable Gmail connection persisted for",
+                        googleAccountEmail
+                    );
+                } else {
+                    console.error(
+                        "Gmail profile did not return an email address; durable connection not persisted."
+                    );
+                }
+            } catch (error) {
+                console.error(
+                    "Failed to persist durable Gmail connection (cookie flow still active):",
+                    error
+                );
+            }
+        } else {
+            console.error(
+                "No refresh token returned by Google; durable Gmail connection not persisted."
+            );
+        }
+
         return NextResponse.json({
             success: true,
             message:
                 "Gmail connected successfully",
+            durableConnectionPersisted,
         });
 
     } catch (error) {
