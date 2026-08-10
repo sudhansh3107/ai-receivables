@@ -5,6 +5,7 @@ export async function cleanupDatabase() {
   console.log("🧹 Cleaning existing demo data...\n");
 
   const tables = [
+    "payment_decisions",
     // Depends on invoice_files / upload_sessions
     "employee_activity",
 
