@@ -5,6 +5,8 @@ import {
     markEmailClassificationFailed,
 } from "@/services/server/emailService";
 import { classifyEmail } from "@/services/server/emailClassificationService";
+import { matchPaymentEmail } from "@/services/server/paymentEmailMatchingService";
+import { persistPaymentDecision } from "@/services/server/paymentDecisionService";
 
 const BATCH_SIZE = 10;
 
@@ -33,6 +35,35 @@ export async function POST() {
                 );
 
                 classifiedIds.push(email.id);
+
+                // Payment-decision side effect is isolated from
+                // classification itself: classification has already
+                // succeeded and been persisted above, so a failure
+                // here must never roll it back or mark the email
+                // failed. This never executes a payment — it only
+                // ever produces a durable, unapproved proposal via
+                // persistPaymentDecision().
+                if (result.classification === "payment_received") {
+                    try {
+                        const matchResult = await matchPaymentEmail({
+                            subject: email.subject,
+                            textBody: email.text_body,
+                            fromEmail: email.from_email,
+                            receivedAt: email.received_at,
+                        });
+
+                        await persistPaymentDecision(
+                            email.id,
+                            matchResult
+                        );
+                    } catch (paymentError) {
+                        console.error(
+                            "Payment Decision - Failed for email:",
+                            email.id,
+                            paymentError
+                        );
+                    }
+                }
             } catch (error) {
                 console.error(
                     "Email Classification - Message Failed:",

@@ -41,7 +41,7 @@ export async function upsertEmailFromGmail(
 export async function getUnclassifiedEmails(limit: number) {
     const { data, error } = await supabase
         .from("emails")
-        .select("id, subject, text_body")
+        .select("id, subject, text_body, from_email, received_at")
         .eq("processing_status", "received")
         .order("received_at", { ascending: true })
         .limit(limit);

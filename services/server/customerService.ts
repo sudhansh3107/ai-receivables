@@ -43,6 +43,14 @@ export async function findOrCreateCustomer(
     };
 }
 
+// Find-only lookup — never creates a customer. Reuses the same query
+// as the private findByEmail() below; safe to call from flows (e.g.
+// email-driven payment matching) that must never synthesize a new
+// customer record from unverified inbound data.
+export async function findCustomerByEmail(email: string) {
+    return findByEmail(email);
+}
+
 async function findByGST(gst: string) {
     const { data, error } = await supabase
         .from("customers")
