@@ -11,6 +11,39 @@ function addDays(date: Date, days: number): Date {
   return d;
 }
 
+// Simulated delivery lag between a reminder being scheduled and being
+// sent, so the two Activity events don't land on an identical instant.
+const DELIVERY_DELAY_HOURS = 3;
+
+// Guarantees scheduled_at < sent_at <= stopDate whenever there is any
+// headroom between the two. When a reminder is scheduled exactly at
+// stopDate (zero headroom), there is no valid instant that is both
+// later than scheduled_at and no later than stopDate, so the reminder
+// is represented as not yet delivered instead.
+function computeDelivery(
+  scheduledAt: Date,
+  stopDate: Date
+): {
+  sentAt: Date | null;
+  deliveryStatus: "delivered" | "pending";
+} {
+  const headroomMs = stopDate.getTime() - scheduledAt.getTime();
+
+  if (headroomMs <= 0) {
+    return { sentAt: null, deliveryStatus: "pending" };
+  }
+
+  const delayMs = Math.min(
+    DELIVERY_DELAY_HOURS * 60 * 60 * 1000,
+    headroomMs
+  );
+
+  return {
+    sentAt: new Date(scheduledAt.getTime() + delayMs),
+    deliveryStatus: "delivered",
+  };
+}
+
 export function generateReminders(
   invoices: DemoInvoice[],
   payments: DemoPayment[]
@@ -44,6 +77,11 @@ export function generateReminders(
     for (const reminderDate of schedule) {
       if (reminderDate > stopDate) continue;
 
+      const { sentAt, deliveryStatus } = computeDelivery(
+        reminderDate,
+        stopDate
+      );
+
       reminders.push({
         id: crypto.randomUUID(),
 
@@ -57,9 +95,9 @@ export function generateReminders(
 
         scheduled_at: reminderDate,
 
-        sent_at: reminderDate,
+        sent_at: sentAt,
 
-        delivery_status: "delivered",
+        delivery_status: deliveryStatus,
 
         response_received:
           payment != null &&
@@ -75,6 +113,11 @@ export function generateReminders(
     );
 
     while (nextReminder <= stopDate) {
+      const { sentAt, deliveryStatus } = computeDelivery(
+        nextReminder,
+        stopDate
+      );
+
       reminders.push({
         id: crypto.randomUUID(),
 
@@ -88,9 +131,9 @@ export function generateReminders(
 
         scheduled_at: nextReminder,
 
-        sent_at: nextReminder,
+        sent_at: sentAt,
 
-        delivery_status: "delivered",
+        delivery_status: deliveryStatus,
 
         response_received:
           payment != null &&
