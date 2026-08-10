@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { NormalizedEmail } from "@/lib/gmail/parse-email";
+import { EmailClassification } from "@/lib/emailClassification";
 
 export async function upsertEmailFromGmail(
     normalized: NormalizedEmail
@@ -35,4 +36,53 @@ export async function upsertEmailFromGmail(
     if (error) throw error;
 
     return data;
+}
+
+export async function getUnclassifiedEmails(limit: number) {
+    const { data, error } = await supabase
+        .from("emails")
+        .select("id, subject, text_body")
+        .eq("processing_status", "received")
+        .order("received_at", { ascending: true })
+        .limit(limit);
+
+    if (error) throw error;
+
+    return data;
+}
+
+export async function updateEmailClassification(
+    emailId: string,
+    classification: EmailClassification,
+    confidence: number
+) {
+    const { data, error } = await supabase
+        .from("emails")
+        .update({
+            classification,
+            classification_confidence: confidence,
+            processing_status: "processed",
+            updated_at: new Date().toISOString(),
+        })
+        .eq("id", emailId)
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    return data;
+}
+
+export async function markEmailClassificationFailed(
+    emailId: string
+) {
+    const { error } = await supabase
+        .from("emails")
+        .update({
+            processing_status: "failed",
+            updated_at: new Date().toISOString(),
+        })
+        .eq("id", emailId);
+
+    if (error) throw error;
 }
