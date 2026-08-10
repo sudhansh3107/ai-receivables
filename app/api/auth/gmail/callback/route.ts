@@ -19,16 +19,6 @@ export async function GET(
         );
     }
 
-    // TEMPORARY DIAGNOSTIC — verifies GOOGLE_REDIRECT_URI is actually
-    // visible inside this specific serverless function's runtime,
-    // before the token exchange is attempted. Remove after use.
-    if (code) {
-        return NextResponse.json({
-            hasRedirectUriEnv: !!process.env.GOOGLE_REDIRECT_URI,
-            redirectUriEnvValue: process.env.GOOGLE_REDIRECT_URI ?? null,
-        });
-    }
-
     try {
         const { tokens } =
             await googleOAuth2Client.getToken({
