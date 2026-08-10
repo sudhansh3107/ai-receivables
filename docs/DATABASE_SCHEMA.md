@@ -107,9 +107,9 @@ CREATE TABLE public.reminders (
   sent_at timestamp with time zone,
   delivery_status text NOT NULL DEFAULT 'pending'::text CHECK (delivery_status = ANY (ARRAY['pending'::text, 'queued'::text, 'sent'::text, 'delivered'::text, 'failed'::text, 'cancelled'::text])),
   response_received boolean NOT NULL DEFAULT false,
-  actioned_at timestamp with time zone,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  actioned_at timestamp with time zone,
   CONSTRAINT reminders_pkey PRIMARY KEY (id),
   CONSTRAINT reminders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
   CONSTRAINT reminders_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id)
@@ -171,4 +171,42 @@ CREATE TABLE public.emails (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT emails_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.gmail_connections (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  google_account_email text NOT NULL UNIQUE,
+  encrypted_refresh_token text NOT NULL,
+  last_history_id text,
+  watch_expiration timestamp with time zone,
+  connected_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT gmail_connections_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.payment_decisions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  email_id uuid NOT NULL UNIQUE,
+  customer_id uuid,
+  invoice_id uuid,
+  payment_id uuid UNIQUE,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])),
+  execution_status text NOT NULL DEFAULT 'not_executed'::text CHECK (execution_status = ANY (ARRAY['not_executed'::text, 'executing'::text, 'executed'::text, 'execution_failed'::text])),
+  needs_review_reason text CHECK (needs_review_reason IS NULL OR (needs_review_reason = ANY (ARRAY['customer_not_found'::text, 'payment_facts_incomplete'::text, 'low_extraction_confidence'::text, 'invoice_not_found'::text, 'currency_mismatch'::text, 'invalid_amount'::text, 'overpayment'::text]))),
+  proposed_amount numeric,
+  proposed_currency text,
+  proposed_payment_date date,
+  proposed_invoice_number text,
+  proposed_payment_reference text,
+  extraction_confidence numeric,
+  match_evidence jsonb,
+  execution_error text,
+  approved_at timestamp with time zone,
+  rejected_at timestamp with time zone,
+  executed_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT payment_decisions_pkey PRIMARY KEY (id),
+  CONSTRAINT payment_decisions_email_id_fkey FOREIGN KEY (email_id) REFERENCES public.emails(id),
+  CONSTRAINT payment_decisions_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
+  CONSTRAINT payment_decisions_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id),
+  CONSTRAINT payment_decisions_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES public.payments(id)
 );
