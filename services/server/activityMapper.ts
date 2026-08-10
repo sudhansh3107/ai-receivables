@@ -133,7 +133,7 @@ export function mapActivityLog(
 
             subtitle: activity.description,
 
-            status: "Pending",
+            status: "Completed",
         };
 
     case ActivityTypes.INVOICE_CREATED:
