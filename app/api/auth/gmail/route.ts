@@ -12,11 +12,5 @@ export async function GET() {
             ],
         });
 
-    const parsed = new URL(authUrl);
-
-    return NextResponse.json({
-        hasRedirectUri: parsed.searchParams.has("redirect_uri"),
-        redirectUri: parsed.searchParams.get("redirect_uri"),
-        hasClientId: parsed.searchParams.has("client_id"),
-    });
+    return NextResponse.redirect(authUrl);
 }
