@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import AppShell from "../components/layout/AppShell";
-import Page from "../components/ui/Page";
+import Page from "../components/ui/PageShell";
 import Card from "../components/ui/Card";
 import ActivityItem from "../components/headquarters/ActivityItem";
 import { tokens } from "@/lib/theme/tokens";

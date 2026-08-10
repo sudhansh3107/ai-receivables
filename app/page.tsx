@@ -1,7 +1,7 @@
 "use client";
 
 import AppShell from "./components/layout/AppShell";
-import Page from "./components/ui/Page";
+import Page from "./components/ui/PageShell";
 
 import { DashboardProvider } from "./hooks/useDashboard";
 
