@@ -68,8 +68,7 @@ export async function getRecentActivity(limit = 3) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
 
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
+    const now = new Date();
 
     const { data, error } = await supabase
         .from("activity_log")
@@ -83,7 +82,7 @@ export async function getRecentActivity(limit = 3) {
             )
         `)
         .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
+        .lte("created_at", now.toISOString())
         .order("created_at", {
             ascending: false,
         })
@@ -121,6 +120,7 @@ export async function getActivityHistory(
                 company_name
             )
         `)
+        .lte("created_at", new Date().toISOString())
         .order("created_at", {
             ascending: false,
         })
