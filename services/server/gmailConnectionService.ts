@@ -83,6 +83,23 @@ export async function getPrimaryGmailConnection(): Promise<GmailConnection | nul
     return data ? toConnection(data as GmailConnectionRow) : null;
 }
 
+// Used by the Pub/Sub webhook to resolve a notification's
+// emailAddress to a connection row. Returns only safe metadata — the
+// encrypted refresh token is never selected here.
+export async function getGmailConnectionByEmail(
+    email: string
+): Promise<GmailConnection | null> {
+    const { data, error } = await supabaseAdmin
+        .from("gmail_connections")
+        .select(SAFE_COLUMNS)
+        .eq("google_account_email", email)
+        .maybeSingle();
+
+    if (error) throw error;
+
+    return data ? toConnection(data as GmailConnectionRow) : null;
+}
+
 // Decrypted token is returned only for immediate server-side use
 // (building a Gmail client). Never return this from an API route.
 export async function getDecryptedRefreshToken(
@@ -114,9 +131,9 @@ export async function updateLastHistoryId(
     if (error) throw error;
 }
 
-// Unused today — no watch()/Pub/Sub in this slice — but the column
-// and update path exist now so that slice can persist renewal state
-// without another migration.
+// Called by services/server/gmailWatchService.ts after a successful
+// gmail.users.watch() call. No cron renewal exists yet — this only
+// records when the current watch will lapse.
 export async function updateWatchExpiration(
     connectionId: string,
     watchExpiration: string | null
