@@ -21,9 +21,10 @@ export async function GET(
 
     try {
         const { tokens } =
-            await googleOAuth2Client.getToken(
-                code
-            );
+            await googleOAuth2Client.getToken({
+                code,
+                redirect_uri: process.env.GOOGLE_REDIRECT_URI!,
+            });
         
         
         const cookieStore = await cookies();
