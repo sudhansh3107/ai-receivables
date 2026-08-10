@@ -32,6 +32,69 @@ export default function DecisionItem({
   onAction,
   actionPending = false,
 }: DecisionItemProps) {
+  const hasAction = Boolean(actionLabel && onAction);
+
+  const icon = (
+    <motion.div
+      whileHover={{
+        scale: 1.05,
+      }}
+      transition={{
+        duration: 0.2,
+      }}
+      className="
+        flex
+        h-14
+        w-14
+        shrink-0
+        items-center
+        justify-center
+        rounded-2xl
+        shadow-[inset_0_1px_1px_rgba(255,255,255,0.45)]
+      "
+      style={{
+        background: `linear-gradient(180deg, #FFFFFF 0%, ${iconBackground} 100%)`,
+      }}
+    >
+      <Icon
+        size={22}
+        strokeWidth={2}
+        color={iconColor}
+      />
+    </motion.div>
+  );
+
+  const text = (
+    <div className="text-left">
+
+      <h3 className="text-[13px] font-semibold leading-[18px] tracking-[-0.01em] text-[#1A1A1A]">
+        {title}
+      </h3>
+
+      <p className="mt-1 text-[14px] font-semibold tracking-[-0.015em] text-[#1A1A1A]">
+        {company}
+      </p>
+
+      <span className="mt-3 block text-[12px] leading-[16px] text-[#6B645C]">
+        {subtitle}
+      </span>
+
+      {reasons !== undefined && (
+        <p
+          className="mt-1.5 text-[11px] leading-[15px]"
+          style={{
+            color: tokens.semantic.textMuted,
+          }}
+        >
+          {reasons && reasons.length > 0
+            ? `What I confirmed: ${reasons.join(", ")}`
+            : "Review recommended based on low confidence."}
+        </p>
+      )}
+
+    </div>
+  );
+
   return (
     <motion.div
       whileHover={{
@@ -42,12 +105,9 @@ export default function DecisionItem({
         duration: 0.25,
         ease: [0.22, 1, 0.36, 1],
       }}
-      className="
+      className={`
         group
-        flex
         w-full
-        items-center
-        justify-between
         rounded-2xl
         border
         border-[#ECE4DA]
@@ -57,106 +117,61 @@ export default function DecisionItem({
         duration-300
         hover:border-[#E1D4C5]
         hover:bg-[#F9F6F2]
-      "
+        ${hasAction ? "flex flex-col" : "flex items-center justify-between"}
+      `}
     >
-      {/* Left */}
+      {hasAction ? (
+        <>
+          {/* Icon + text — full row width, nothing competing for space */}
 
-      <div className="flex items-center gap-4">
+          <div className="flex items-start gap-4">
+            {icon}
+            {text}
+          </div>
 
-        {/* Icon */}
+          {/* Action — its own row, fully visible inside the card */}
 
-        <motion.div
-          whileHover={{
-            scale: 1.05,
-          }}
-          transition={{
-            duration: 0.2,
-          }}
-          className="
-            flex
-            h-14
-            w-14
-            shrink-0
-            items-center
-            justify-center
-            rounded-2xl
-            shadow-[inset_0_1px_1px_rgba(255,255,255,0.45)]
-          "
-          style={{
-            background: `linear-gradient(180deg, #FFFFFF 0%, ${iconBackground} 100%)`,
-          }}
-        >
-          <Icon
-            size={22}
-            strokeWidth={2}
-            color={iconColor}
-          />
-        </motion.div>
-
-        {/* Text */}
-
-        <div className="text-left">
-
-          <h3 className="text-[13px] font-semibold leading-[18px] tracking-[-0.01em] text-[#1A1A1A]">
-            {title}
-          </h3>
-
-          <p className="mt-1 text-[14px] font-semibold tracking-[-0.015em] text-[#1A1A1A]">
-            {company}
-          </p>
-
-          <span className="mt-3 block text-[12px] leading-[16px] text-[#6B645C]">
-            {subtitle}
-          </span>
-
-          {reasons !== undefined && (
-            <p
-              className="mt-1.5 text-[11px] leading-[15px]"
-              style={{
-                color: tokens.semantic.textMuted,
-              }}
+          <div className="mt-4 flex justify-end">
+            <Button
+              variant="secondary"
+              onClick={onAction}
+              disabled={actionPending}
             >
-              {reasons && reasons.length > 0
-                ? `What I confirmed: ${reasons.join(", ")}`
-                : "Review recommended based on low confidence."}
-            </p>
-          )}
-
-        </div>
-
-      </div>
-
-      {/* Right: explicit action, or a plain chevron if none applies */}
-
-      {actionLabel && onAction ? (
-        <Button
-          variant="secondary"
-          onClick={onAction}
-          disabled={actionPending}
-          className="ml-4 shrink-0"
-        >
-          {actionPending ? "Saving…" : actionLabel}
-        </Button>
+              {actionPending ? "Saving…" : actionLabel}
+            </Button>
+          </div>
+        </>
       ) : (
-        <motion.div
-          whileHover={{
-            x: 3,
-          }}
-          transition={{
-            duration: 0.2,
-          }}
-        >
-          <ChevronRight
-            size={19}
-            strokeWidth={2}
-            className="
-              text-[#7D7D7D]
-              transition-colors
-              duration-300
-              group-hover:text-[#8F6B4A]
-            "
-          />
-        </motion.div>
+        <>
+          {/* Left */}
+
+          <div className="flex items-center gap-4">
+            {icon}
+            {text}
+          </div>
+
+          {/* Right: plain chevron, no action to take */}
+
+          <motion.div
+            whileHover={{
+              x: 3,
+            }}
+            transition={{
+              duration: 0.2,
+            }}
+          >
+            <ChevronRight
+              size={19}
+              strokeWidth={2}
+              className="
+                text-[#7D7D7D]
+                transition-colors
+                duration-300
+                group-hover:text-[#8F6B4A]
+              "
+            />
+          </motion.div>
+        </>
       )}
 
     </motion.div>
