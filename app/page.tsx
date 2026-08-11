@@ -10,6 +10,7 @@ import MissionCard from "./components/headquarters/MissionCard";
 import ActivityFeed from "./components/headquarters/ActivityFeed";
 import DecisionFeed from "./components/headquarters/DecisionFeed";
 import AIInsight from "./components/headquarters/AIInsight";
+import PaymentDecisionFeed from "./components/headquarters/PaymentDecisionFeed";
 
 export default function Home() {
   return (
@@ -56,6 +57,12 @@ export default function Home() {
             </div>
 
           </div>
+
+          {/* Payment Decisions — AI-matched payments from email
+              awaiting human approval, separate from the invoice/
+              reminder decisions above */}
+
+          <PaymentDecisionFeed />
 
         </Page>
       </AppShell>

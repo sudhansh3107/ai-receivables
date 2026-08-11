@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
+import { toast } from "sonner";
+
 import Card from "../ui/Card";
+import Button from "../ui/Button";
 import { tokens } from "@/lib/theme/tokens";
 import {
     getPendingPaymentDecisions,
@@ -46,17 +50,66 @@ function formatConfidence(confidence: number | null): string {
 // Distinct from DecisionFeed/DecisionItem (low_confidence /
 // payment_follow_up): this renders payment_decisions rows, a
 // different kind of decision — a proposed money-moving action awaiting
-// human approval, not a routine review/follow-up task. Read-only: no
-// approve/reject/execute action is wired here. The existing endpoints
-// (POST /api/payment-decisions/[id]/approve and .../execute) are
-// wired up separately once this display is confirmed correct.
+// human approval, not a routine review/follow-up task. Shared as-is
+// between the /decisions page and the Mission Control homepage so
+// there is exactly one implementation of this read + approve logic,
+// not two.
+//
+// Approve-only: this never calls the execute endpoint. Approving here
+// only moves a decision from pending -> approved (the existing
+// approve endpoint's own behavior) — execution remains a separate,
+// not-yet-wired step.
 export default function PaymentDecisionFeed() {
-    const { data: decisions, error } = useRealtimeRefresh<
-        PendingPaymentDecision[]
-    >(PAYMENT_DECISION_TABLES, getPendingPaymentDecisions);
+    const {
+        data: decisions,
+        error,
+        refresh,
+    } = useRealtimeRefresh<PendingPaymentDecision[]>(
+        PAYMENT_DECISION_TABLES,
+        getPendingPaymentDecisions
+    );
+
+    const [approvingId, setApprovingId] = useState<string | null>(
+        null
+    );
 
     if (error || decisions === null || decisions.length === 0) {
         return null;
+    }
+
+    async function handleApprove(decisionId: string) {
+        setApprovingId(decisionId);
+
+        try {
+            const response = await fetch(
+                `/api/payment-decisions/${decisionId}/approve`,
+                { method: "POST" }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(
+                    result.error ??
+                        "Failed to approve payment decision."
+                );
+            }
+
+            // Immediate feedback — the existing payment_decisions
+            // Realtime subscription above will also independently
+            // reflect this same UPDATE (here and in any other mounted
+            // instance of this component), this just avoids waiting
+            // on the debounce for the card that was just acted on.
+            await refresh();
+        } catch (err) {
+            console.error(err);
+
+            toast.error(
+                "Couldn't approve this payment decision. Please try again."
+            );
+        } finally {
+            setApprovingId(null);
+        }
     }
 
     return (
@@ -85,6 +138,23 @@ export default function PaymentDecisionFeed() {
                     const isIncomplete =
                         decision.needsReviewReason ===
                         "payment_facts_incomplete";
+
+                    // Only a decision the matcher itself already
+                    // classified as "ready" (no needs_review_reason at
+                    // all) gets the one-click Approve action — this is
+                    // an existing distinction already encoded upstream
+                    // (PaymentEmailMatchResult's "ready" vs
+                    // "needs_review" statuses), not a new rule invented
+                    // here. Any needs_review_reason, whichever one,
+                    // means this decision needs deliberate human
+                    // investigation rather than a single click; that
+                    // flow isn't built in this pass, so no approval
+                    // action is offered for it here.
+                    const canApprove =
+                        decision.needsReviewReason === null;
+
+                    const isApproving =
+                        approvingId === decision.id;
 
                     return (
                         <div
@@ -162,6 +232,22 @@ export default function PaymentDecisionFeed() {
                                               decision.needsReviewReason
                                           ] ?? decision.needsReviewReason}
                                 </p>
+                            )}
+
+                            {canApprove && (
+                                <div className="mt-4 flex justify-end">
+                                    <Button
+                                        variant="primary"
+                                        disabled={isApproving}
+                                        onClick={() =>
+                                            handleApprove(decision.id)
+                                        }
+                                    >
+                                        {isApproving
+                                            ? "Approving…"
+                                            : "Approve"}
+                                    </Button>
+                                </div>
                             )}
                         </div>
                     );
