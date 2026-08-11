@@ -30,6 +30,28 @@ export async function approvePaymentDecisionRequest(
 // calls approve/execute — all of that is server-side only, inside
 // services/server/paymentProofRequestService.ts. The browser supplies
 // nothing but decisionId.
+// Thin client-side wrapper around POST /api/payment-decisions/[id]/wait.
+// Mirrors approvePaymentDecisionRequest()'s shape and contract exactly.
+// WAIT is not an approval — it only hides the decision from the queue
+// for 24 hours (services/server/paymentDecisionExecutionService.ts::
+// deferPaymentDecision()); it sends no email and creates no payment.
+export async function deferPaymentDecisionRequest(
+    decisionId: string
+): Promise<void> {
+    const response = await fetch(
+        `/api/payment-decisions/${decisionId}/wait`,
+        { method: "POST" }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+        throw new Error(
+            result.error ?? "Failed to defer payment decision."
+        );
+    }
+}
+
 export async function requestPaymentProofRequest(
     decisionId: string
 ): Promise<void> {

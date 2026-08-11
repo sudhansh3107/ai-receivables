@@ -155,6 +155,91 @@ async function flagDecisionAsOverpayment(
     return data as PaymentDecisionRow;
 }
 
+export type PaymentDecisionDeferResult =
+    | {
+          outcome: "deferred";
+          decision: PaymentDecisionRow;
+      }
+    | {
+          outcome: "already_deferred";
+          decision: PaymentDecisionRow;
+      };
+
+// Human "Wait" action — see getPendingPaymentDecisions()'s query-time
+// filter (the only resurfacing mechanism: no cron/poller/scheduler).
+// This is NOT an approval and never touches status, execution_status,
+// or any payment/invoice/email — it only stamps deferred_at so the
+// decision drops out of the queue for 24 hours.
+//
+// Conditional UPDATE, not read-then-write: WHERE status='pending' AND
+// (deferred_at IS NULL OR deferred_at <= now() - 24h) is evaluated
+// atomically by Postgres against the row's state at execution time, so
+// two concurrent WAIT calls (or a double-click) can never both reset
+// the timer — whichever commits first wins, and the second either
+// falls outside the WHERE (still within the 24h window, handled below
+// as a no-op "already_deferred") or fails the status guard.
+export async function deferPaymentDecision(
+    decisionId: string
+): Promise<PaymentDecisionDeferResult> {
+    const cutoff = new Date(
+        Date.now() - 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const { data, error } = await supabase
+        .from("payment_decisions")
+        .update({
+            deferred_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        })
+        .eq("id", decisionId)
+        .eq("status", "pending")
+        .or(`deferred_at.is.null,deferred_at.lte.${cutoff}`)
+        .select()
+        .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+        const deferredDecision = data as PaymentDecisionRow;
+
+        await logActivity({
+            invoiceId: deferredDecision.invoice_id,
+            customerId: deferredDecision.customer_id ?? undefined,
+            activityType: ActivityTypes.PAYMENT_DECISION_DEFERRED,
+            description: `Payment decision deferred for invoice ${describeInvoice(
+                deferredDecision
+            )} — giving the payment 24 hours to arrive`,
+            metadata: {
+                decisionId: deferredDecision.id,
+            },
+        });
+
+        return {
+            outcome: "deferred",
+            decision: deferredDecision,
+        };
+    }
+
+    const existing = await getPaymentDecisionById(decisionId);
+
+    if (!existing) {
+        throw new Error(`Payment decision ${decisionId} not found`);
+    }
+
+    if (existing.status !== "pending") {
+        throw new Error(
+            `Payment decision ${decisionId} cannot be deferred: status is "${existing.status}", not "pending"`
+        );
+    }
+
+    // Still within the 24-hour window: not an error, and per product
+    // behavior the timer must NOT be reset — return the decision as-is.
+    return {
+        outcome: "already_deferred",
+        decision: existing,
+    };
+}
+
 export type PaymentDecisionApprovalResult =
     | {
           outcome: "approved";

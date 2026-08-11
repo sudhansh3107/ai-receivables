@@ -230,6 +230,16 @@ function buildPaymentFollowUpCandidates(
     });
 }
 
+// Shown when a decision resurfaces after WAIT's 24-hour window elapsed
+// with no confirmation (decision.deferredAt is non-null — see
+// paymentDecisionService.ts::getPendingPaymentDecisions(), which only
+// ever returns a deferred row once that window has passed). Wording
+// matches the required product copy verbatim, and matches
+// PaymentDecisionFeed.tsx's identical constant byte for byte so a
+// payment_decision reads identically everywhere it appears.
+const WAIT_COMPLETED_CONTEXT =
+    "Payment still unconfirmed — no proof received during the 24-hour wait.";
+
 // subtitle intentionally embeds the review-reason label directly (not
 // via DecisionCandidate.reasons, whose rendering in DecisionItem is
 // hardcoded to low_confidence's "What I confirmed" / "based on low
@@ -256,6 +266,19 @@ function buildPaymentDecisionCandidates(
               ] ?? decision.needsReviewReason
             : null;
 
+        const subtitleParts = [
+            `Invoice ${decision.invoiceNumber ?? "unknown"}`,
+            amountLabel,
+        ];
+
+        if (reviewReasonLabel) {
+            subtitleParts.push(reviewReasonLabel);
+        }
+
+        if (decision.deferredAt) {
+            subtitleParts.push(WAIT_COMPLETED_CONTEXT);
+        }
+
         return {
             candidate: {
                 id: `payment_decision:${decision.id}`,
@@ -265,13 +288,7 @@ function buildPaymentDecisionCandidates(
                 title: reviewReasonLabel
                     ? "Payment needs review"
                     : "Payment awaiting approval",
-                subtitle: reviewReasonLabel
-                    ? `Invoice ${
-                          decision.invoiceNumber ?? "unknown"
-                      } · ${amountLabel} · ${reviewReasonLabel}`
-                    : `Invoice ${
-                          decision.invoiceNumber ?? "unknown"
-                      } · ${amountLabel}`,
+                subtitle: subtitleParts.join(" · "),
                 reasons: null,
                 needsReviewReason: decision.needsReviewReason,
             },

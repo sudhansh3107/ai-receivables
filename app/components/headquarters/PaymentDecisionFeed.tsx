@@ -12,7 +12,10 @@ import {
     PendingPaymentDecision,
 } from "@/services/server/paymentDecisionService";
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
-import { requestPaymentProofRequest } from "@/lib/paymentDecisionActions";
+import {
+    deferPaymentDecisionRequest,
+    requestPaymentProofRequest,
+} from "@/lib/paymentDecisionActions";
 import { PAYMENT_DECISION_REVIEW_REASON_LABELS } from "@/lib/paymentDecisionReviewReasons";
 
 const PAYMENT_DECISION_TABLES = ["payment_decisions"];
@@ -35,6 +38,14 @@ function formatCurrency(
     }
 }
 
+// Shown when a decision resurfaces after WAIT's 24-hour window elapsed
+// with no confirmation (decision.deferredAt is non-null — see
+// services/server/paymentDecisionService.ts::getPendingPaymentDecisions(),
+// which only ever returns a deferred row once that window has passed).
+// Wording matches the required product copy verbatim.
+const WAIT_COMPLETED_CONTEXT =
+    "Payment still unconfirmed — no proof received during the 24-hour wait.";
+
 // title/subtitle wording deliberately mirrors decisionService.ts::
 // buildPaymentDecisionCandidates() (Mission Control's DecisionFeed) byte
 // for byte, so the same payment_decision reads identically wherever it
@@ -54,15 +65,21 @@ function subtitleFor(decision: PendingPaymentDecision): string {
 
     const invoiceLabel = `Invoice ${decision.invoiceNumber ?? "unknown"}`;
 
-    if (!decision.needsReviewReason) {
-        return `${invoiceLabel} · ${amountLabel}`;
+    const parts = [invoiceLabel, amountLabel];
+
+    if (decision.needsReviewReason) {
+        parts.push(
+            PAYMENT_DECISION_REVIEW_REASON_LABELS[
+                decision.needsReviewReason
+            ] ?? decision.needsReviewReason
+        );
     }
 
-    const reviewReasonLabel =
-        PAYMENT_DECISION_REVIEW_REASON_LABELS[decision.needsReviewReason] ??
-        decision.needsReviewReason;
+    if (decision.deferredAt) {
+        parts.push(WAIT_COMPLETED_CONTEXT);
+    }
 
-    return `${invoiceLabel} · ${amountLabel} · ${reviewReasonLabel}`;
+    return parts.join(" · ");
 }
 
 // Distinct from DecisionFeed/DecisionItem's low_confidence/
@@ -137,15 +154,32 @@ export default function PaymentDecisionFeed() {
         }
     }
 
-    // UI-only, identical to DecisionFeed.tsx's Mission Control behavior —
-    // no backend deferral mechanism exists yet (that is a separate,
-    // future task). Reused verbatim rather than re-implemented so the
-    // two surfaces can never say something different about what Wait
-    // does.
-    function handleWaitPaymentDecision() {
-        toast.info(
-            "Deferring isn't available yet — this decision stays in the queue."
-        );
+    // WAIT is not an approval — it only hides the decision from the
+    // queue for 24 hours (services/server/paymentDecisionExecutionService.ts::
+    // deferPaymentDecision()). Sends no email, creates no payment.
+    // Identical handler shape to handleRequestProof above, and to
+    // DecisionFeed.tsx's handleWaitPaymentDecision — the only Wait
+    // implementation, reused here rather than duplicated.
+    async function handleWaitPaymentDecision(decisionId: string) {
+        setPendingId(decisionId);
+
+        try {
+            await deferPaymentDecisionRequest(decisionId);
+
+            toast.success("Payment decision deferred for 24 hours.");
+
+            await refresh();
+        } catch (err) {
+            console.error(err);
+
+            toast.error(
+                err instanceof Error
+                    ? err.message
+                    : "Couldn't defer this decision. Please try again."
+            );
+        } finally {
+            setPendingId(null);
+        }
     }
 
     function buildHoverActions(
@@ -166,8 +200,9 @@ export default function PaymentDecisionFeed() {
                 label: "Wait",
                 icon: Clock,
                 tone: "wait",
+                pending: pendingId === decision.id,
                 ariaLabel: "Defer this decision for later",
-                onClick: handleWaitPaymentDecision,
+                onClick: () => handleWaitPaymentDecision(decision.id),
             },
             {
                 key: "review",

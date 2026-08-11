@@ -88,6 +88,36 @@ export function mapActivityLog(
             status: "Completed",
         };
 
+    case ActivityTypes.PAYMENT_DECISION_DEFERRED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "payment",
+
+            title: "Payment decision deferred",
+
+            subtitle: activity.description,
+
+            status: "Waiting",
+        };
+
+    case ActivityTypes.PAYMENT_DECISION_WAIT_COMPLETED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "payment",
+
+            title: "Payment confirmation still pending",
+
+            subtitle: activity.description,
+
+            status: "Waiting",
+        };
+
     case ActivityTypes.PAYMENT_CLAIM_MATCHED:
 
         return {

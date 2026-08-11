@@ -36,6 +36,22 @@ export const ActivityTypes = {
     PAYMENT_DECISION_EXECUTED: "payment_decision_executed",
     PAYMENT_DECISION_EXECUTION_FAILED: "payment_decision_execution_failed",
 
+    // A human explicitly chose "Wait" on a pending payment_decision —
+    // NOT an approval. See services/server/paymentDecisionExecutionService.ts::
+    // deferPaymentDecision(). Sends no email, creates no payment; only
+    // hides the decision from the queue for 24 hours via deferred_at.
+    PAYMENT_DECISION_DEFERRED: "payment_decision_deferred",
+
+    // The SYSTEM resurfacing a deferred decision after its 24-hour wait
+    // elapsed with no proof received — distinct from
+    // PAYMENT_DECISION_DEFERRED (the human's WAIT click that started the
+    // clock). See services/server/paymentDecisionService.ts::
+    // getPendingPaymentDecisions() / logWaitCompletedForResurfacedDecisions().
+    // Logged at most once per WAIT cycle (keyed by decisionId + the
+    // deferred_at value that started that cycle); a new WAIT click resets
+    // deferred_at and makes the next expiry eligible for another event.
+    PAYMENT_DECISION_WAIT_COMPLETED: "payment_decision_wait_completed",
+
     // A pending payment_decision was automatically resolved because its
     // invoice reached balance_due=0 through an actual payment — see
     // services/server/paymentDecisionService.ts::

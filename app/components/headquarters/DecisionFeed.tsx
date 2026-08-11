@@ -25,7 +25,10 @@ import type {
 } from "@/services/server/decisionService";
 import { markInvoiceReviewed } from "@/services/invoiceService";
 import { markReminderActioned } from "@/services/server/reminderService";
-import { requestPaymentProofRequest } from "@/lib/paymentDecisionActions";
+import {
+  deferPaymentDecisionRequest,
+  requestPaymentProofRequest,
+} from "@/lib/paymentDecisionActions";
 
 const KIND_STYLES: Record<
   DecisionKind,
@@ -123,16 +126,32 @@ export default function DecisionFeed() {
     }
   }
 
-  // UI-only: no existing mechanism defers/snoozes a payment_decision
-  // (checked paymentDecisionService.ts, paymentDecisionExecutionService.ts,
-  // and reminderService.ts — reminders represent unpaid invoices, a
-  // different concept). Per instructions, this does not invent a new
-  // backend state/workflow — it only gives honest feedback that
-  // deferring isn't wired up yet, rather than silently no-opping.
-  function handleWaitPaymentDecision() {
-    toast.info(
-      "Deferring isn't available yet — this decision stays in the queue."
-    );
+  // WAIT is not an approval — it only hides the decision from the queue
+  // for 24 hours (services/server/paymentDecisionExecutionService.ts::
+  // deferPaymentDecision()). Sends no email, creates no payment.
+  // Identical handler shape to handleRequestProof above, and to
+  // PaymentDecisionFeed.tsx's handleWaitPaymentDecision — the only Wait
+  // implementation, reused here rather than duplicated.
+  async function handleWaitPaymentDecision(
+    candidateId: string,
+    decisionId: string
+  ) {
+    setPendingId(candidateId);
+
+    try {
+      await deferPaymentDecisionRequest(decisionId);
+      toast.success("Payment decision deferred for 24 hours.");
+      await refresh();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Couldn't defer this decision. Please try again."
+      );
+    } finally {
+      setPendingId(null);
+    }
   }
 
   // All three actions are always shown together as one consistent set.
@@ -166,8 +185,10 @@ export default function DecisionFeed() {
         label: "Wait",
         icon: Clock,
         tone: "wait",
+        pending: pendingId === decision.id,
         ariaLabel: "Defer this decision for later",
-        onClick: handleWaitPaymentDecision,
+        onClick: () =>
+          handleWaitPaymentDecision(decision.id, decision.actionId),
       },
       {
         key: "review",

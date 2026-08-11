@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { PaymentEmailMatchResult } from "@/services/server/paymentEmailMatchingService";
+import { logActivity } from "./activityLogService";
+import { ActivityTypes } from "@/lib/activityTypes";
 
 export interface PendingPaymentDecision {
     id: string;
@@ -24,6 +26,14 @@ export interface PendingPaymentDecision {
     matchEvidence: unknown;
     executionError: string | null;
 
+    // Non-null means this decision was previously deferred via WAIT and
+    // has now resurfaced (getPendingPaymentDecisions only ever returns a
+    // deferred row once its 24-hour window has elapsed — see that
+    // function's own docs), so the UI can show "payment still
+    // unconfirmed" context. Null means never deferred, or the queue's
+    // ordinary "no wait has happened" case.
+    deferredAt: string | null;
+
     createdAt: string;
 }
 
@@ -43,6 +53,7 @@ interface PendingPaymentDecisionRow {
     extraction_confidence: number | null;
     match_evidence: unknown;
     execution_error: string | null;
+    deferred_at: string | null;
     created_at: string;
     customers: { company_name: string } | null;
     invoices: { invoice_number: string } | null;
@@ -239,6 +250,64 @@ export async function resolvePaymentDecisionsForSettledInvoice(
     }));
 }
 
+// One Activity Feed entry per WAIT cycle for a decision that resurfaces
+// with no confirmation — see getPendingPaymentDecisions() below, the
+// only caller. A "cycle" is identified by the (decisionId, deferred_at)
+// pair: deferred_at only ever changes when a human clicks WAIT again
+// (see paymentDecisionExecutionService.ts::deferPaymentDecision()), so
+// re-checking against the CURRENT deferred_at value on every call is
+// what makes this idempotent across repeated dashboard refreshes for
+// the same cycle, while still allowing exactly one new event the next
+// time the decision is deferred and resurfaces again. Reuses the
+// existing Activity Feed as the record of "already logged" rather than
+// adding a new column — there is no cron/poller driving this; it is
+// detected at read time, the only time resurfacing is observable.
+//
+// Best-effort: a failure here must never break the read it's attached
+// to (unlike an explicit user-initiated action such as WAIT/Approve,
+// this is a passive side effect of loading the queue), so errors are
+// logged and swallowed rather than thrown.
+async function logWaitCompletedForResurfacedDecisions(
+    resurfacedRows: PendingPaymentDecisionRow[]
+): Promise<void> {
+    for (const row of resurfacedRows) {
+        try {
+            const { data: existing, error: existingError } = await supabase
+                .from("activity_log")
+                .select("id")
+                .eq(
+                    "activity_type",
+                    ActivityTypes.PAYMENT_DECISION_WAIT_COMPLETED
+                )
+                .eq("metadata->>decisionId", row.id)
+                .eq("metadata->>deferredAt", row.deferred_at as string)
+                .limit(1)
+                .maybeSingle();
+
+            if (existingError) throw existingError;
+
+            if (existing) continue;
+
+            await logActivity({
+                invoiceId: row.invoice_id,
+                customerId: row.customer_id ?? undefined,
+                activityType: ActivityTypes.PAYMENT_DECISION_WAIT_COMPLETED,
+                description:
+                    "24-hour wait completed — no payment proof received.",
+                metadata: {
+                    decisionId: row.id,
+                    deferredAt: row.deferred_at,
+                },
+            });
+        } catch (err) {
+            console.error(
+                `Failed to log payment_decision_wait_completed for decision ${row.id}:`,
+                err
+            );
+        }
+    }
+}
+
 // Read-only display source for the payment-decision review UI (the
 // "future review UI" match_evidence above was captured for). Scoped
 // to status='pending' only — approved/rejected/executed decisions are
@@ -246,10 +315,23 @@ export async function resolvePaymentDecisionsForSettledInvoice(
 // customer/invoice context a review UI needs; every proposed_* column,
 // needs_review_reason, and match_evidence are preserved verbatim
 // (never re-derived) so the UI reflects exactly what the matcher
-// decided. Never approves, executes, or writes anything.
+// decided. Never approves, executes, rejects, or otherwise mutates a
+// payment_decision — the one exception is the best-effort Activity
+// Feed entry logged via logWaitCompletedForResurfacedDecisions() above
+// when a deferred decision resurfaces, which is idempotent and does
+// not touch payment_decisions itself.
 export async function getPendingPaymentDecisions(): Promise<
     PendingPaymentDecision[]
 > {
+    // Wait's ONLY resurfacing mechanism (no cron/poller/scheduler — see
+    // services/server/paymentDecisionExecutionService.ts::
+    // deferPaymentDecision()): a decision deferred within the last 24
+    // hours is excluded here; once deferred_at is more than 24 hours
+    // old, this same query naturally includes it again.
+    const deferredCutoff = new Date(
+        Date.now() - 24 * 60 * 60 * 1000
+    ).toISOString();
+
     const { data, error } = await supabase
         .from("payment_decisions")
         .select(
@@ -269,12 +351,14 @@ export async function getPendingPaymentDecisions(): Promise<
             extraction_confidence,
             match_evidence,
             execution_error,
+            deferred_at,
             created_at,
             customers ( company_name ),
             invoices ( invoice_number )
         `
         )
         .eq("status", "pending")
+        .or(`deferred_at.is.null,deferred_at.lte.${deferredCutoff}`)
         .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -329,6 +413,16 @@ export async function getPendingPaymentDecisions(): Promise<
             !settledInvoiceIds.has(row.invoice_id)
     );
 
+    // A visible row with a non-null deferred_at can ONLY have gotten
+    // here via the .or() cutoff filter above (deferred_at <= 24h ago) —
+    // it is, by construction, exactly a "resurfaced after WAIT" row,
+    // not a fresh never-deferred one (those have deferred_at IS NULL).
+    const resurfacedRows = visibleRows.filter(
+        (row) => row.deferred_at !== null
+    );
+
+    await logWaitCompletedForResurfacedDecisions(resurfacedRows);
+
     return visibleRows.map((row) => ({
         id: row.id,
         emailId: row.email_id,
@@ -360,6 +454,8 @@ export async function getPendingPaymentDecisions(): Promise<
 
         matchEvidence: row.match_evidence,
         executionError: row.execution_error,
+
+        deferredAt: row.deferred_at,
 
         createdAt: row.created_at,
     }));
