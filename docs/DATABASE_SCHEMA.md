@@ -134,7 +134,7 @@ CREATE TABLE public.activity_log (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   invoice_id uuid,
   customer_id uuid,
-  activity_type text NOT NULL CHECK (activity_type = ANY (ARRAY['invoice_created'::text, 'invoice_validated'::text, 'invoice_uploaded'::text, 'invoice_confidence_calculated'::text, 'customer_created'::text, 'customer_matched'::text, 'reminder_scheduled'::text, 'reminder_sent'::text, 'payment_recorded'::text, 'invoice_paid'::text, 'invoice_partially_paid'::text, 'invoice_overdue'::text, 'customer_insights_updated'::text])),
+  activity_type text NOT NULL CHECK (activity_type = ANY (ARRAY['invoice_created'::text, 'invoice_validated'::text, 'invoice_uploaded'::text, 'invoice_confidence_calculated'::text, 'customer_created'::text, 'customer_matched'::text, 'reminder_scheduled'::text, 'reminder_sent'::text, 'payment_recorded'::text, 'invoice_paid'::text, 'invoice_partially_paid'::text, 'invoice_overdue'::text, 'customer_insights_updated'::text, 'payment_decision_approved'::text, 'payment_decision_executed'::text, 'payment_decision_execution_failed'::text])),
   description text NOT NULL,
   metadata jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),

@@ -86,3 +86,19 @@ export async function markEmailClassificationFailed(
 
     if (error) throw error;
 }
+
+// Set by the AR relevance gate (lib/emailRelevanceGate.ts) for mail
+// that never reaches classifyEmail() — classification/confidence stay
+// null, distinguishing "filtered before classification" from
+// "classified as irrelevant" (EmailClassifications.IRRELEVANT).
+export async function markEmailIgnored(emailId: string) {
+    const { error } = await supabase
+        .from("emails")
+        .update({
+            processing_status: "ignored",
+            updated_at: new Date().toISOString(),
+        })
+        .eq("id", emailId);
+
+    if (error) throw error;
+}

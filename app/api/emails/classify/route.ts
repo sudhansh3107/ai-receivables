@@ -3,8 +3,10 @@ import {
     getUnclassifiedEmails,
     updateEmailClassification,
     markEmailClassificationFailed,
+    markEmailIgnored,
 } from "@/services/server/emailService";
 import { classifyEmail } from "@/services/server/emailClassificationService";
+import { evaluateEmailRelevance } from "@/lib/emailRelevanceGate";
 import { matchPaymentEmail } from "@/services/server/paymentEmailMatchingService";
 import { persistPaymentDecision } from "@/services/server/paymentDecisionService";
 
@@ -15,6 +17,7 @@ export async function POST() {
         const emails = await getUnclassifiedEmails(BATCH_SIZE);
 
         const classifiedIds: string[] = [];
+        const ignoredIds: string[] = [];
 
         const failures: {
             emailId: string;
@@ -23,6 +26,31 @@ export async function POST() {
 
         for (const email of emails) {
             try {
+                // AR relevance gate: deterministic-only, conservative
+                // (uncertain always passes through). Runs BEFORE
+                // classifyEmail() so obviously irrelevant mail
+                // (newsletters, marketing, recruiting, spam) never
+                // costs an LLM classification call.
+                const relevance = evaluateEmailRelevance({
+                    fromEmail: email.from_email,
+                    subject: email.subject,
+                    textBody: email.text_body,
+                });
+
+                if (!relevance.relevant) {
+                    await markEmailIgnored(email.id);
+
+                    console.log(
+                        "Email Relevance Gate - Ignored:",
+                        email.id,
+                        relevance.reason
+                    );
+
+                    ignoredIds.push(email.id);
+
+                    continue;
+                }
+
                 const result = await classifyEmail({
                     subject: email.subject,
                     textBody: email.text_body,
@@ -87,8 +115,10 @@ export async function POST() {
             success: failures.length === 0,
             attempted: emails.length,
             classified: classifiedIds.length,
+            ignored: ignoredIds.length,
             failed: failures.length,
             classifiedEmailIds: classifiedIds,
+            ignoredEmailIds: ignoredIds,
             failures,
         });
     } catch (error) {
