@@ -1,125 +1,17 @@
 import { NextResponse } from "next/server";
-import {
-    getUnclassifiedEmails,
-    updateEmailClassification,
-    markEmailClassificationFailed,
-    markEmailIgnored,
-} from "@/services/server/emailService";
-import { classifyEmail } from "@/services/server/emailClassificationService";
-import { evaluateEmailRelevance } from "@/lib/emailRelevanceGate";
-import { matchPaymentEmail } from "@/services/server/paymentEmailMatchingService";
-import { persistPaymentDecision } from "@/services/server/paymentDecisionService";
+import { processUnclassifiedEmails } from "@/services/server/emailProcessingService";
 
-const BATCH_SIZE = 10;
-
+// Manual/standalone trigger for the same relevance-gate + classification
+// pipeline that POST /api/gmail/sync now also runs automatically after
+// every sync. Kept as its own endpoint for reprocessing a backlog or
+// re-running independently of a sync.
 export async function POST() {
     try {
-        const emails = await getUnclassifiedEmails(BATCH_SIZE);
-
-        const classifiedIds: string[] = [];
-        const ignoredIds: string[] = [];
-
-        const failures: {
-            emailId: string;
-            error: string;
-        }[] = [];
-
-        for (const email of emails) {
-            try {
-                // AR relevance gate: deterministic-only, conservative
-                // (uncertain always passes through). Runs BEFORE
-                // classifyEmail() so obviously irrelevant mail
-                // (newsletters, marketing, recruiting, spam) never
-                // costs an LLM classification call.
-                const relevance = evaluateEmailRelevance({
-                    fromEmail: email.from_email,
-                    subject: email.subject,
-                    textBody: email.text_body,
-                });
-
-                if (!relevance.relevant) {
-                    await markEmailIgnored(email.id);
-
-                    console.log(
-                        "Email Relevance Gate - Ignored:",
-                        email.id,
-                        relevance.reason
-                    );
-
-                    ignoredIds.push(email.id);
-
-                    continue;
-                }
-
-                const result = await classifyEmail({
-                    subject: email.subject,
-                    textBody: email.text_body,
-                });
-
-                await updateEmailClassification(
-                    email.id,
-                    result.classification,
-                    result.confidence
-                );
-
-                classifiedIds.push(email.id);
-
-                // Payment-decision side effect is isolated from
-                // classification itself: classification has already
-                // succeeded and been persisted above, so a failure
-                // here must never roll it back or mark the email
-                // failed. This never executes a payment — it only
-                // ever produces a durable, unapproved proposal via
-                // persistPaymentDecision().
-                if (result.classification === "payment_received") {
-                    try {
-                        const matchResult = await matchPaymentEmail({
-                            subject: email.subject,
-                            textBody: email.text_body,
-                            fromEmail: email.from_email,
-                            receivedAt: email.received_at,
-                        });
-
-                        await persistPaymentDecision(
-                            email.id,
-                            matchResult
-                        );
-                    } catch (paymentError) {
-                        console.error(
-                            "Payment Decision - Failed for email:",
-                            email.id,
-                            paymentError
-                        );
-                    }
-                }
-            } catch (error) {
-                console.error(
-                    "Email Classification - Message Failed:",
-                    email.id,
-                    error
-                );
-
-                await markEmailClassificationFailed(email.id);
-
-                failures.push({
-                    emailId: email.id,
-                    error:
-                        error instanceof Error
-                            ? error.message
-                            : "Unknown error",
-                });
-            }
-        }
+        const result = await processUnclassifiedEmails();
 
         return NextResponse.json({
-            success: failures.length === 0,
-            attempted: emails.length,
-            classified: classifiedIds.length,
-            ignored: ignoredIds.length,
-            failed: failures.length,
-            classifiedEmailIds: classifiedIds,
-            ignoredEmailIds: ignoredIds,
-            failures,
+            success: result.failed === 0,
+            ...result,
         });
     } catch (error) {
         console.error("Email Classification Error:", error);
