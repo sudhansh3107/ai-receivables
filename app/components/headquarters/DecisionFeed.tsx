@@ -6,7 +6,10 @@ import { motion } from "motion/react";
 import {
   ArrowRight,
   Banknote,
+  Check,
+  Clock,
   Clock3,
+  Eye,
   FileWarning,
   LucideIcon,
 } from "lucide-react";
@@ -115,15 +118,27 @@ export default function DecisionFeed() {
     }
   }
 
-  // Only a decision the matcher itself already classified as "ready"
-  // (needsReviewReason === null) gets the one-click Approve action —
-  // an existing distinction already encoded upstream
+  // UI-only: no existing mechanism defers/snoozes a payment_decision
+  // (checked paymentDecisionService.ts, paymentDecisionExecutionService.ts,
+  // and reminderService.ts — reminders represent unpaid invoices, a
+  // different concept). Per instructions, this does not invent a new
+  // backend state/workflow — it only gives honest feedback that
+  // deferring isn't wired up yet, rather than silently no-opping.
+  function handleWaitPaymentDecision() {
+    toast.info(
+      "Deferring isn't available yet — this decision stays in the queue."
+    );
+  }
+
+  // All three actions are always shown together as one consistent
+  // set. Approve is only enabled for a decision the matcher itself
+  // already classified as "ready" (needsReviewReason === null) — an
+  // existing distinction already encoded upstream
   // (PaymentEmailMatchResult's "ready" vs "needs_review" statuses),
-  // not a new rule invented here. Any needs_review_reason routes to
-  // the existing /decisions review surface instead — "escalate" has
-  // no dedicated existing mechanism (no ticketing/assignment system
-  // in this codebase), so Review is the one existing-mechanism action
-  // offered for that case.
+  // not a new rule invented here. For a needs-review decision, Approve
+  // stays visible but disabled (never hidden) so it can never bypass
+  // that existing boundary — Review (linking to the existing
+  // /decisions detail view) is how that case gets investigated.
   function buildHoverActions(
     decision: DecisionCandidate
   ): DecisionHoverAction[] | undefined {
@@ -131,24 +146,39 @@ export default function DecisionFeed() {
       return undefined;
     }
 
-    if (decision.needsReviewReason == null) {
-      return [
-        {
-          key: "approve",
-          label: "Approve",
-          variant: "primary",
-          pending: pendingId === decision.id,
-          onClick: () =>
-            handleApprovePaymentDecision(decision.id, decision.actionId),
-        },
-      ];
-    }
+    const isReady = decision.needsReviewReason == null;
 
     return [
       {
+        key: "approve",
+        label: "Approve",
+        icon: Check,
+        tone: "approve",
+        pending: pendingId === decision.id,
+        disabled: !isReady,
+        ariaLabel: isReady
+          ? "Approve this payment"
+          : "Needs review before this can be approved",
+        onClick: isReady
+          ? () =>
+              handleApprovePaymentDecision(decision.id, decision.actionId)
+          : undefined,
+      },
+      {
+        key: "wait",
+        label: "Wait",
+        icon: Clock,
+        tone: "wait",
+        ariaLabel: "Defer this decision for later",
+        onClick: handleWaitPaymentDecision,
+      },
+      {
         key: "review",
         label: "Review",
+        icon: Eye,
+        tone: "review",
         href: "/decisions",
+        ariaLabel: "Review this decision's details",
       },
     ];
   }
