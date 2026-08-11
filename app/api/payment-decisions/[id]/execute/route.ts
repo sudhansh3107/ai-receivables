@@ -19,6 +19,15 @@ export async function POST(
 
         const result = await executePaymentDecision(id);
 
+        if (result.outcome === "already_paid") {
+            return NextResponse.json({
+                success: true,
+                outcome: "already_paid",
+                decision: result.decision,
+                message: "Payment already received — no action required.",
+            });
+        }
+
         return NextResponse.json({
             success: result.outcome === "executed",
             ...result,

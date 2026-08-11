@@ -21,3 +21,30 @@ export async function approvePaymentDecisionRequest(
         );
     }
 }
+
+// Thin client-side wrapper around POST /api/payment-decisions/[id]/
+// request-proof. Mirrors approvePaymentDecisionRequest()'s shape and
+// contract exactly: makes the request, parses the response, throws a
+// plain Error with a useful message on failure. It does NOT touch Gmail,
+// does NOT construct the email, does NOT resolve the recipient, and never
+// calls approve/execute — all of that is server-side only, inside
+// services/server/paymentProofRequestService.ts. The browser supplies
+// nothing but decisionId.
+export async function requestPaymentProofRequest(
+    decisionId: string
+): Promise<void> {
+    const response = await fetch(
+        `/api/payment-decisions/${decisionId}/request-proof`,
+        { method: "POST" }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+        throw new Error(
+            result.message ??
+                result.error ??
+                "Failed to send proof request."
+        );
+    }
+}

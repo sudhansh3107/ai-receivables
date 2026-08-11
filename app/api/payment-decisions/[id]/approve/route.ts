@@ -12,11 +12,33 @@ export async function POST(
     try {
         const { id } = await context.params;
 
-        const decision = await approvePaymentDecision(id);
+        const result = await approvePaymentDecision(id);
+
+        if (result.outcome === "approved") {
+            return NextResponse.json({
+                success: true,
+                outcome: "approved",
+                decision: result.decision,
+            });
+        }
+
+        if (result.outcome === "already_paid") {
+            return NextResponse.json({
+                success: true,
+                outcome: "already_paid",
+                decision: result.decision,
+                message: "Payment already received — no action required.",
+            });
+        }
 
         return NextResponse.json({
-            success: true,
-            decision,
+            success: false,
+            outcome: "needs_review",
+            decision: result.decision,
+            reason: result.reason,
+            currentBalance: result.currentBalance,
+            message:
+                "The proposed amount exceeds the invoice's current balance and needs manual review.",
         });
     } catch (error) {
         console.error("Payment Decision Approve Error:", error);

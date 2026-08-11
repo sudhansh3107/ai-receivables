@@ -8,12 +8,15 @@ import Button from "../ui/Button";
 
 // Restrained, semantic tone per action — reuses existing token pairs
 // already present elsewhere in the app (tokens.status.*), not new
-// colors. "approve" intentionally reuses the muted completed-green
-// pairing (light background, muted text) rather than a saturated CTA
-// green; "review" reuses the same info-blue already used for
-// execution-status badges; "wait" is deliberately neutral (no
-// tokens.status.* entry reads as urgent/positive/negative).
-export type DecisionHoverActionTone = "approve" | "wait" | "review";
+// colors. "requestProof" reuses the pending/amber pairing already used
+// for low-confidence review and the "Status: pending" badge elsewhere —
+// this action is outbound work awaiting a customer response, not a
+// completed/positive outcome, so it deliberately does NOT reuse the
+// completed-green pairing that the old "approve" action used; "review"
+// reuses the same info-blue already used for execution-status badges;
+// "wait" is deliberately neutral (no tokens.status.* entry reads as
+// urgent/positive/negative).
+export type DecisionHoverActionTone = "requestProof" | "wait" | "review";
 
 export interface DecisionHoverAction {
   key: string;
@@ -37,9 +40,9 @@ const HOVER_ACTION_TONE_STYLES: Record<
   DecisionHoverActionTone,
   { background: string; color: string }
 > = {
-  approve: {
-    background: tokens.status.completed.background,
-    color: tokens.status.completed.text,
+  requestProof: {
+    background: tokens.status.pending.background,
+    color: tokens.status.pending.text,
   },
   wait: {
     background: tokens.semantic.hover,

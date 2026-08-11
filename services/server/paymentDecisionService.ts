@@ -179,6 +179,66 @@ export async function persistPaymentDecision(
     return data;
 }
 
+// Reconciliation between an actual payment and the "human attention"
+// payment_decisions queue — see services/server/paymentService.ts::
+// recordPayment(), the ONLY caller. Resolution is deliberately
+// INVOICE-level, not payment-level: the schema cannot safely attribute
+// one specific payment to one specific customer claim (multiple
+// payment_decisions may legitimately exist for the same invoice — see
+// the audit this implements), but once an invoice reaches
+// balance_due=0 there is, by definition, no remaining receivable for
+// ANY pending decision against it to be about. Resolves EVERY pending
+// decision for the given invoice, never just the oldest/one with the
+// closest matching amount.
+//
+// Reuses the exact existing vocabulary paymentDecisionExecutionService.ts
+// ::resolveDecisionAsAlreadySettled() already established for a pending
+// decision whose invoice turns out to already be settled: status
+// moves to 'rejected' (not a human rejection — see that function's own
+// docs) with resolution_reason='invoice_already_settled'. execution_status
+// is left untouched (still 'not_executed', which
+// payment_decisions_execution_requires_approval_check already permits
+// regardless of status), and deferred_at is deliberately left untouched
+// too — WAIT's lifecycle is out of scope for this change.
+//
+// Conditional UPDATE (WHERE status='pending'), not read-then-write: safe
+// to call from multiple concurrent recordPayment() invocations, or twice
+// for the same invoice (e.g. two payments that both happen to fully
+// settle it, or a retry) — only rows still 'pending' at the moment this
+// specific UPDATE executes are affected, so a decision already resolved
+// by an earlier call (or already approved/executed) is never touched or
+// double-reported. Returns exactly the rows this call transitioned, for
+// the caller to log one Activity Feed entry per decision.
+export interface SettledInvoicePaymentDecision {
+    id: string;
+    customerId: string | null;
+    invoiceId: string;
+}
+
+export async function resolvePaymentDecisionsForSettledInvoice(
+    invoiceId: string
+): Promise<SettledInvoicePaymentDecision[]> {
+    const { data, error } = await supabase
+        .from("payment_decisions")
+        .update({
+            status: "rejected",
+            rejected_at: new Date().toISOString(),
+            resolution_reason: "invoice_already_settled",
+            updated_at: new Date().toISOString(),
+        })
+        .eq("invoice_id", invoiceId)
+        .eq("status", "pending")
+        .select("id, customer_id, invoice_id");
+
+    if (error) throw error;
+
+    return (data ?? []).map((row) => ({
+        id: row.id as string,
+        customerId: row.customer_id as string | null,
+        invoiceId: row.invoice_id as string,
+    }));
+}
+
 // Read-only display source for the payment-decision review UI (the
 // "future review UI" match_evidence above was captured for). Scoped
 // to status='pending' only — approved/rejected/executed decisions are
@@ -221,7 +281,55 @@ export async function getPendingPaymentDecisions(): Promise<
 
     const rows = (data ?? []) as unknown as PendingPaymentDecisionRow[];
 
-    return rows.map((row) => ({
+    // Query-time visibility backstop — defense-in-depth only.
+    // resolvePaymentDecisionsForSettledInvoice() above is the
+    // authoritative state mutation; this catches anything it missed
+    // (a decision whose invoice was already fully paid before this
+    // feature existed, or any gap between a payment write and its
+    // reconciliation step) without mutating anything here.
+    //
+    // A single embedded-resource query (e.g. filtering on a joined
+    // `invoices.balance_due`) is NOT usable for this: PostgREST only
+    // applies a filter to an embedded resource by turning the embed
+    // into an inner join, which would silently drop every decision
+    // with invoice_id IS NULL entirely (e.g. needs_review_reason=
+    // 'invoice_not_found') instead of correctly keeping them visible.
+    // So this batch-fetches invoice balances separately and filters in
+    // JS — the same established pattern decisionService.ts::
+    // getRiskRankByCustomer() already uses for an analogous batch
+    // lookup, not a new mechanism.
+    const invoiceIds = Array.from(
+        new Set(
+            rows
+                .map((row) => row.invoice_id)
+                .filter((id): id is string => id !== null)
+        )
+    );
+
+    let settledInvoiceIds = new Set<string>();
+
+    if (invoiceIds.length > 0) {
+        const { data: invoiceRows, error: invoiceError } = await supabase
+            .from("invoices")
+            .select("id, balance_due")
+            .in("id", invoiceIds);
+
+        if (invoiceError) throw invoiceError;
+
+        settledInvoiceIds = new Set(
+            (invoiceRows ?? [])
+                .filter((invoice) => Number(invoice.balance_due) <= 0)
+                .map((invoice) => invoice.id as string)
+        );
+    }
+
+    const visibleRows = rows.filter(
+        (row) =>
+            row.invoice_id === null ||
+            !settledInvoiceIds.has(row.invoice_id)
+    );
+
+    return visibleRows.map((row) => ({
         id: row.id,
         emailId: row.email_id,
 

@@ -56,6 +56,38 @@ export function mapActivityLog(
             status: "Completed",
         };
 
+    case ActivityTypes.PAYMENT_PROOF_REQUESTED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "mail",
+
+            title: `Requested payment confirmation from ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
+    case ActivityTypes.PAYMENT_DECISION_RESOLVED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "payment",
+
+            title: "Payment decision resolved",
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
     case ActivityTypes.PAYMENT_CLAIM_MATCHED:
 
         return {

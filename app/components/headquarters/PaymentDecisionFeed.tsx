@@ -1,17 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { Banknote, Clock, Eye, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import Card from "../ui/Card";
-import Button from "../ui/Button";
+import DecisionItem, { DecisionHoverAction } from "./DecisionItem";
 import { tokens } from "@/lib/theme/tokens";
 import {
     getPendingPaymentDecisions,
     PendingPaymentDecision,
 } from "@/services/server/paymentDecisionService";
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
-import { approvePaymentDecisionRequest } from "@/lib/paymentDecisionActions";
+import { requestPaymentProofRequest } from "@/lib/paymentDecisionActions";
 import { PAYMENT_DECISION_REVIEW_REASON_LABELS } from "@/lib/paymentDecisionReviewReasons";
 
 const PAYMENT_DECISION_TABLES = ["payment_decisions"];
@@ -34,23 +35,55 @@ function formatCurrency(
     }
 }
 
-function formatConfidence(confidence: number | null): string {
-    if (confidence == null) return "Unknown";
-    return `${Math.round(confidence * 100)}%`;
+// title/subtitle wording deliberately mirrors decisionService.ts::
+// buildPaymentDecisionCandidates() (Mission Control's DecisionFeed) byte
+// for byte, so the same payment_decision reads identically wherever it
+// appears — that consistency is the whole point of this component no
+// longer maintaining its own bespoke card.
+function titleFor(decision: PendingPaymentDecision): string {
+    return decision.needsReviewReason
+        ? "Payment needs review"
+        : "Payment awaiting approval";
 }
 
-// Distinct from DecisionFeed/DecisionItem (low_confidence /
-// payment_follow_up): this renders payment_decisions rows, a
-// different kind of decision — a proposed money-moving action awaiting
-// human approval, not a routine review/follow-up task. Shared as-is
-// between the /decisions page and the Mission Control homepage so
-// there is exactly one implementation of this read + approve logic,
-// not two.
+function subtitleFor(decision: PendingPaymentDecision): string {
+    const amountLabel = formatCurrency(
+        decision.proposedAmount,
+        decision.proposedCurrency
+    );
+
+    const invoiceLabel = `Invoice ${decision.invoiceNumber ?? "unknown"}`;
+
+    if (!decision.needsReviewReason) {
+        return `${invoiceLabel} · ${amountLabel}`;
+    }
+
+    const reviewReasonLabel =
+        PAYMENT_DECISION_REVIEW_REASON_LABELS[decision.needsReviewReason] ??
+        decision.needsReviewReason;
+
+    return `${invoiceLabel} · ${amountLabel} · ${reviewReasonLabel}`;
+}
+
+// Distinct from DecisionFeed/DecisionItem's low_confidence/
+// payment_follow_up kinds: this renders payment_decisions rows — an
+// unresolved payment CLAIM (see paymentEmailMatchingService.ts), not a
+// routine review/follow-up task. Shared as-is between the /decisions page
+// and the Mission Control homepage (DecisionFeed) so there is exactly one
+// set of human actions for a payment_decision, not two:
 //
-// Approve-only: this never calls the execute endpoint. Approving here
-// only moves a decision from pending -> approved (the existing
-// approve endpoint's own behavior) — execution remains a separate,
-// not-yet-wired step.
+//   REQUEST PROOF | WAIT | REVIEW
+//
+// A payment_decision is never "approved" here or anywhere — see
+// services/server/paymentProofRequestService.ts and
+// services/server/paymentDecisionExecutionService.ts::approvePaymentDecision()'s
+// own docs for why that verb no longer applies to this action set.
+//
+// Renders each decision via the EXISTING DecisionItem component and its
+// hover-action overlay (the same one Mission Control uses) rather than a
+// bespoke card, so the interaction — icons, tone tokens, hover/focus
+// behavior, card dimensions — is identical everywhere a payment_decision
+// is shown, not just similar.
 export default function PaymentDecisionFeed() {
     const {
         data: decisions,
@@ -61,35 +94,96 @@ export default function PaymentDecisionFeed() {
         getPendingPaymentDecisions
     );
 
-    const [approvingId, setApprovingId] = useState<string | null>(
-        null
-    );
+    const [pendingId, setPendingId] = useState<string | null>(null);
 
     if (error || decisions === null || decisions.length === 0) {
         return null;
     }
 
-    async function handleApprove(decisionId: string) {
-        setApprovingId(decisionId);
+    // Request-proof only: never approves, executes, or creates a payment
+    // — see services/server/paymentProofRequestService.ts. Sends a
+    // deterministic, same-thread Gmail reply asking the customer for
+    // payment evidence; the decision is left exactly as it was (still
+    // "pending") on both success and failure. Identical wrapper call and
+    // handler shape to DecisionFeed.tsx's handleRequestProof — the only
+    // Request Proof implementation, reused here rather than duplicated.
+    async function handleRequestProof(decisionId: string) {
+        setPendingId(decisionId);
 
         try {
-            await approvePaymentDecisionRequest(decisionId);
+            await requestPaymentProofRequest(decisionId);
+
+            toast.success("Requested payment proof from the customer.");
 
             // Immediate feedback — the existing payment_decisions
             // Realtime subscription above will also independently
-            // reflect this same UPDATE (here and in any other mounted
-            // instance of this component), this just avoids waiting
-            // on the debounce for the card that was just acted on.
+            // reflect any change (here and in any other mounted
+            // instance of this component); this just avoids waiting on
+            // the debounce for the card that was just acted on. Request
+            // Proof itself never changes payment_decisions, so this is
+            // largely a no-op refresh today, kept for consistency with
+            // DecisionFeed.tsx's identical pattern.
             await refresh();
         } catch (err) {
             console.error(err);
 
             toast.error(
-                "Couldn't approve this payment decision. Please try again."
+                err instanceof Error
+                    ? err.message
+                    : "Couldn't send the proof request. Please try again."
             );
         } finally {
-            setApprovingId(null);
+            setPendingId(null);
         }
+    }
+
+    // UI-only, identical to DecisionFeed.tsx's Mission Control behavior —
+    // no backend deferral mechanism exists yet (that is a separate,
+    // future task). Reused verbatim rather than re-implemented so the
+    // two surfaces can never say something different about what Wait
+    // does.
+    function handleWaitPaymentDecision() {
+        toast.info(
+            "Deferring isn't available yet — this decision stays in the queue."
+        );
+    }
+
+    function buildHoverActions(
+        decision: PendingPaymentDecision
+    ): DecisionHoverAction[] {
+        return [
+            {
+                key: "requestProof",
+                label: "Request Proof",
+                icon: Send,
+                tone: "requestProof",
+                pending: pendingId === decision.id,
+                ariaLabel: "Ask the customer for payment proof",
+                onClick: () => handleRequestProof(decision.id),
+            },
+            {
+                key: "wait",
+                label: "Wait",
+                icon: Clock,
+                tone: "wait",
+                ariaLabel: "Defer this decision for later",
+                onClick: handleWaitPaymentDecision,
+            },
+            {
+                key: "review",
+                label: "Review",
+                icon: Eye,
+                tone: "review",
+                // No href: unlike Mission Control (which links here, to
+                // /decisions), this component IS /decisions' own detailed
+                // view of this same decision — navigating to itself would
+                // be a pointless self-link. Kept visible-but-inert so the
+                // same three-action set appears everywhere a
+                // payment_decision is rendered, per the product rule.
+                disabled: true,
+                ariaLabel: "You're already viewing this decision's details",
+            },
+        ];
     }
 
     return (
@@ -101,8 +195,9 @@ export default function PaymentDecisionFeed() {
                     </h2>
 
                     <p className="mt-1 text-[13px] text-[#6B645C]">
-                        Payments AI matched from email, awaiting approval —
-                        separate from invoice/reminder decisions.
+                        Payments AI matched from email that couldn&apos;t be
+                        reconciled — separate from invoice/reminder
+                        decisions.
                     </p>
                 </div>
 
@@ -114,124 +209,18 @@ export default function PaymentDecisionFeed() {
             </div>
 
             <div className="mt-3 space-y-4 px-3 pb-3">
-                {decisions.map((decision) => {
-                    const isIncomplete =
-                        decision.needsReviewReason ===
-                        "payment_facts_incomplete";
-
-                    // Only a decision the matcher itself already
-                    // classified as "ready" (no needs_review_reason at
-                    // all) gets the one-click Approve action — this is
-                    // an existing distinction already encoded upstream
-                    // (PaymentEmailMatchResult's "ready" vs
-                    // "needs_review" statuses), not a new rule invented
-                    // here. Any needs_review_reason, whichever one,
-                    // means this decision needs deliberate human
-                    // investigation rather than a single click; that
-                    // flow isn't built in this pass, so no approval
-                    // action is offered for it here.
-                    const canApprove =
-                        decision.needsReviewReason === null;
-
-                    const isApproving =
-                        approvingId === decision.id;
-
-                    return (
-                        <div
-                            key={decision.id}
-                            className="rounded-2xl border border-[#ECE4DA] bg-[#FCFAF7] p-5"
-                        >
-                            <div className="flex items-start justify-between gap-4">
-                                <div>
-                                    <p className="text-[14px] font-semibold text-[#1A1A1A]">
-                                        {decision.customerName ??
-                                            "Unknown customer"}
-                                    </p>
-
-                                    <p className="mt-1 text-[13px] text-[#6B645C]">
-                                        Invoice{" "}
-                                        {decision.invoiceNumber ?? "unknown"}
-                                    </p>
-                                </div>
-
-                                <p className="text-[15px] font-semibold text-[#1A1A1A]">
-                                    {formatCurrency(
-                                        decision.proposedAmount,
-                                        decision.proposedCurrency
-                                    )}
-                                </p>
-                            </div>
-
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                <span
-                                    className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                                    style={{
-                                        background:
-                                            tokens.status.pending.background,
-                                        color: tokens.status.pending.text,
-                                    }}
-                                >
-                                    Status: {decision.status}
-                                </span>
-
-                                <span
-                                    className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                                    style={{
-                                        background:
-                                            tokens.status.info.background,
-                                        color: tokens.status.info.text,
-                                    }}
-                                >
-                                    Execution:{" "}
-                                    {decision.executionStatus.replace(
-                                        /_/g,
-                                        " "
-                                    )}
-                                </span>
-
-                                <span className="text-[11px] text-[#8C857C]">
-                                    Confidence:{" "}
-                                    {formatConfidence(
-                                        decision.extractionConfidence
-                                    )}
-                                </span>
-                            </div>
-
-                            {decision.needsReviewReason && (
-                                <p
-                                    className="mt-3 rounded-xl px-3 py-2 text-[12px] leading-[17px]"
-                                    style={{
-                                        background:
-                                            tokens.status.overdue.background,
-                                        color: tokens.status.overdue.text,
-                                    }}
-                                >
-                                    {isIncomplete
-                                        ? "Missing payment details (e.g. payment date) — cannot be safely approved yet."
-                                        : PAYMENT_DECISION_REVIEW_REASON_LABELS[
-                                              decision.needsReviewReason
-                                          ] ?? decision.needsReviewReason}
-                                </p>
-                            )}
-
-                            {canApprove && (
-                                <div className="mt-4 flex justify-end">
-                                    <Button
-                                        variant="primary"
-                                        disabled={isApproving}
-                                        onClick={() =>
-                                            handleApprove(decision.id)
-                                        }
-                                    >
-                                        {isApproving
-                                            ? "Approving…"
-                                            : "Approve"}
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
+                {decisions.map((decision) => (
+                    <DecisionItem
+                        key={decision.id}
+                        icon={Banknote}
+                        iconColor={tokens.status.info.text}
+                        iconBackground={tokens.status.info.background}
+                        title={titleFor(decision)}
+                        company={decision.customerName ?? "Unknown customer"}
+                        subtitle={subtitleFor(decision)}
+                        hoverActions={buildHoverActions(decision)}
+                    />
+                ))}
             </div>
         </Card>
     );

@@ -6,12 +6,12 @@ import { motion } from "motion/react";
 import {
   ArrowRight,
   Banknote,
-  Check,
   Clock,
   Clock3,
   Eye,
   FileWarning,
   LucideIcon,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,7 +25,7 @@ import type {
 } from "@/services/server/decisionService";
 import { markInvoiceReviewed } from "@/services/invoiceService";
 import { markReminderActioned } from "@/services/server/reminderService";
-import { approvePaymentDecisionRequest } from "@/lib/paymentDecisionActions";
+import { requestPaymentProofRequest } from "@/lib/paymentDecisionActions";
 
 const KIND_STYLES: Record<
   DecisionKind,
@@ -96,22 +96,27 @@ export default function DecisionFeed() {
     }
   }
 
-  // Approve-only: never calls the execute endpoint. Only transitions
-  // an already-"ready" (needsReviewReason === null) payment decision
-  // from pending -> approved via the existing approve endpoint.
-  async function handleApprovePaymentDecision(
+  // Request-proof only: never approves, executes, or creates a payment —
+  // see services/server/paymentProofRequestService.ts. Sends a
+  // deterministic, same-thread Gmail reply asking the customer for
+  // payment evidence; the decision is left exactly as it was (still
+  // "pending") on both success and failure.
+  async function handleRequestProof(
     candidateId: string,
     decisionId: string
   ) {
     setPendingId(candidateId);
 
     try {
-      await approvePaymentDecisionRequest(decisionId);
+      await requestPaymentProofRequest(decisionId);
+      toast.success("Requested payment proof from the customer.");
       await refresh();
     } catch (err) {
       console.error(err);
       toast.error(
-        "Couldn't approve this payment decision. Please try again."
+        err instanceof Error
+          ? err.message
+          : "Couldn't send the proof request. Please try again."
       );
     } finally {
       setPendingId(null);
@@ -130,15 +135,14 @@ export default function DecisionFeed() {
     );
   }
 
-  // All three actions are always shown together as one consistent
-  // set. Approve is only enabled for a decision the matcher itself
-  // already classified as "ready" (needsReviewReason === null) — an
-  // existing distinction already encoded upstream
-  // (PaymentEmailMatchResult's "ready" vs "needs_review" statuses),
-  // not a new rule invented here. For a needs-review decision, Approve
-  // stays visible but disabled (never hidden) so it can never bypass
-  // that existing boundary — Review (linking to the existing
-  // /decisions detail view) is how that case gets investigated.
+  // All three actions are always shown together as one consistent set.
+  // A payment_decision exists because a customer's payment claim
+  // couldn't be matched to the ledger — Request Proof is the action for
+  // exactly that situation (asking the customer for evidence), so unlike
+  // the old Approve action it is NOT gated on needsReviewReason: every
+  // pending payment_decision, matched or not, is eligible (server-side
+  // eligibility mirrors this — see requestPaymentProof()'s minimum
+  // check of status === "pending").
   function buildHoverActions(
     decision: DecisionCandidate
   ): DecisionHoverAction[] | undefined {
@@ -146,23 +150,16 @@ export default function DecisionFeed() {
       return undefined;
     }
 
-    const isReady = decision.needsReviewReason == null;
-
     return [
       {
-        key: "approve",
-        label: "Approve",
-        icon: Check,
-        tone: "approve",
+        key: "requestProof",
+        label: "Request Proof",
+        icon: Send,
+        tone: "requestProof",
         pending: pendingId === decision.id,
-        disabled: !isReady,
-        ariaLabel: isReady
-          ? "Approve this payment"
-          : "Needs review before this can be approved",
-        onClick: isReady
-          ? () =>
-              handleApprovePaymentDecision(decision.id, decision.actionId)
-          : undefined,
+        ariaLabel: "Ask the customer for payment proof",
+        onClick: () =>
+          handleRequestProof(decision.id, decision.actionId),
       },
       {
         key: "wait",

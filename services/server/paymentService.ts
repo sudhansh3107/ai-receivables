@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { logInvoiceActivity } from "./activityLogService";
+import { logActivity, logInvoiceActivity } from "./activityLogService";
 import { ActivityTypes } from "@/lib/activityTypes";
 import { InvoiceStatus, type InvoiceStatusType } from "@/lib/invoiceStatus";
 import { type PaymentMethodType } from "@/lib/paymentMethods";
@@ -7,6 +7,7 @@ import { toLocalDateString } from "@/lib/date";
 import {
     refreshCustomerInsights,
 } from "./customerInsightService";
+import { resolvePaymentDecisionsForSettledInvoice } from "./paymentDecisionService";
 
 
 export interface RecordPaymentInput {
@@ -24,7 +25,7 @@ export interface RecordPaymentInput {
     notes?: string;
 }
 
-async function getInvoice(invoiceId: string) {
+export async function getInvoice(invoiceId: string) {
     const { data, error } = await supabase
         .from("invoices")
         .select("*")
@@ -38,7 +39,7 @@ async function getInvoice(invoiceId: string) {
     return data;
 }
 
-async function getTotalPayments(invoiceId: string) {
+export async function getTotalPayments(invoiceId: string) {
     const { data, error } = await supabase
         .from("payments")
         .select("amount")
@@ -54,7 +55,7 @@ async function getTotalPayments(invoiceId: string) {
     );
 }
 
-function calculateInvoiceBalance(
+export function calculateInvoiceBalance(
     invoiceAmount: number,
     totalPaid: number
 ) {
@@ -73,73 +74,166 @@ function calculateInvoiceBalance(
     };
 }
 
-async function updateInvoice(
-    invoiceId: string,
-    balanceDue: number,
-    status: InvoiceStatusType
-) {
-    const { data, error } = await supabase
-        .from("invoices")
-        .update({
-            balance_due: balanceDue,
-            status,
-        })
-        .eq("id", invoiceId)
-        .select()
-        .single();
-
-    if (error) {
-        throw error;
+// Thrown by recordPayment() when the database-level revalidation
+// inside public.record_payment_atomic() (see the migration adding it)
+// determines a payment must NOT be recorded — either because the
+// invoice's current balance is already zero (checked under a row
+// lock, so this is authoritative even against a concurrent writer) or
+// because the proposed amount exceeds what remains. Distinguishable
+// from a generic thrown error so callers that need to (e.g.
+// executePaymentDecision()) can react precisely instead of treating
+// every failure the same way; callers that don't care (e.g.
+// POST /api/payments) can keep treating it as any other thrown error —
+// `message` is always a clear, user-facing description.
+export class PaymentRecordingRejectedError extends Error {
+    constructor(
+        public readonly reason:
+            | "already_paid"
+            | "overpayment"
+            | "invoice_not_found",
+        public readonly currentBalance: number | null,
+        message: string
+    ) {
+        super(message);
+        this.name = "PaymentRecordingRejectedError";
     }
+}
 
-    return data;
+type RecordPaymentRpcResult =
+    | {
+          outcome: "recorded";
+          payment: Record<string, unknown>;
+          balanceDue: number;
+          status: InvoiceStatusType;
+          invoiceNumber: string;
+      }
+    | {
+          outcome: "already_paid";
+          currentBalance: number;
+      }
+    | {
+          outcome: "overpayment";
+          currentBalance: number;
+      }
+    | {
+          outcome: "invoice_not_found";
+      };
+
+// Payment recording, with the invoice's outstanding balance validated
+// and reconciled atomically under a database row lock — the final,
+// authoritative safety boundary (see public.record_payment_atomic() in
+// supabase/migrations/20260811140000_add_record_payment_atomic_function.sql).
+// This closes the concurrent race that application-level pre-checks
+// (approval-time and execution-time revalidation in
+// paymentDecisionExecutionService.ts) cannot: two callers reading the
+// same balance before either writes can no longer both succeed, since
+// the second caller's transaction blocks on the invoice row lock until
+// the first commits, then re-reads the now-current balance.
+//
+// getInvoice/getTotalPayments/calculateInvoiceBalance are NOT called
+// here — the RPC performs the equivalent logic itself, inside the
+// lock, so this function has exactly one source of truth for the
+// balance calculation at write time (those three exports remain used
+// elsewhere, for the separate application-level pre-checks).
+//
+// Best-effort, isolated in its own try/catch: by the time this runs,
+// record_payment_atomic() has already committed the real payment — a
+// reconciliation failure must NEVER be reported back to the caller as
+// "failed to record payment" (that already succeeded), and must never
+// retry/re-send anything. Mirrors the same isolation pattern already
+// used elsewhere in this codebase for post-write side effects (e.g.
+// emailProcessingService.ts's payment-decision persistence, and
+// paymentProofRequestService.ts's post-send activity logging).
+async function reconcilePaymentDecisions(
+    invoiceId: string,
+    invoiceNumber: string
+): Promise<void> {
+    try {
+        const resolved = await resolvePaymentDecisionsForSettledInvoice(
+            invoiceId
+        );
+
+        for (const decision of resolved) {
+            try {
+                await logActivity({
+                    invoiceId: decision.invoiceId,
+                    customerId: decision.customerId ?? undefined,
+                    activityType: ActivityTypes.PAYMENT_DECISION_RESOLVED,
+                    description: `Payment decision resolved because invoice ${invoiceNumber} is fully paid.`,
+                    metadata: {
+                        decisionId: decision.id,
+                        invoiceId: decision.invoiceId,
+                        customerId: decision.customerId,
+                        invoiceNumber,
+                        resolutionReason: "invoice_already_settled",
+                    },
+                });
+            } catch (activityError) {
+                console.error(
+                    "Payment Decision Reconciliation - activity logging failed for decision:",
+                    decision.id,
+                    activityError
+                );
+            }
+        }
+    } catch (error) {
+        console.error(
+            "Payment Decision Reconciliation - failed for invoice:",
+            invoiceId,
+            error
+        );
+    }
 }
 
 export async function recordPayment(
     input: RecordPaymentInput
 ) {
-    const { data: payment, error } = await supabase
-        .from("payments")
-        .insert({
-            invoice_id: input.invoiceId,
-            customer_id: input.customerId,
-
-            amount: input.amount,
-
-            payment_date: input.paymentDate.toISOString(),
-
-            payment_method: input.paymentMethod,
-
-            payment_reference: input.paymentReference,
-
-            notes: input.notes,
-        })
-        .select()
-        .single();
+    const { data, error } = await supabase.rpc(
+        "record_payment_atomic",
+        {
+            p_invoice_id: input.invoiceId,
+            p_customer_id: input.customerId,
+            p_amount: input.amount,
+            p_payment_date: input.paymentDate.toISOString(),
+            p_payment_method: input.paymentMethod,
+            p_payment_reference: input.paymentReference ?? null,
+            p_notes: input.notes ?? null,
+        }
+    );
 
     if (error) {
         throw error;
     }
 
-    const invoice = await getInvoice(input.invoiceId);
+    const result = data as RecordPaymentRpcResult;
 
-    const totalPaid = await getTotalPayments(
-        input.invoiceId
-    );
+    if (result.outcome === "invoice_not_found") {
+        throw new PaymentRecordingRejectedError(
+            "invoice_not_found",
+            null,
+            `Invoice ${input.invoiceId} not found`
+        );
+    }
 
-    const {
-        balanceDue,
-        status,
-    } = calculateInvoiceBalance(
-        Number(invoice.invoice_amount),
-        totalPaid
-    );
+    if (result.outcome === "already_paid") {
+        throw new PaymentRecordingRejectedError(
+            "already_paid",
+            result.currentBalance ?? 0,
+            "Invoice is already fully paid; no payment recorded"
+        );
+    }
 
-    await updateInvoice(
-        input.invoiceId,
-        balanceDue,
-        status
-    );
+    if (result.outcome === "overpayment") {
+        throw new PaymentRecordingRejectedError(
+            "overpayment",
+            result.currentBalance ?? 0,
+            `Proposed amount (${input.amount}) exceeds the invoice's current balance (${result.currentBalance}); no payment recorded`
+        );
+    }
+
+    const payment = result.payment;
+    const balanceDue = result.balanceDue;
+    const status = result.status;
 
     const metadata = {
         amount: input.amount,
@@ -152,8 +246,19 @@ export async function recordPayment(
         input.invoiceId,
         input.customerId,
         ActivityTypes.INVOICE_PAID,
-        `Invoice ${invoice.invoice_number} paid in full`,
+        `Invoice ${result.invoiceNumber} paid in full`,
         metadata
+    );
+
+    // Write-time reconciliation: the invoice this payment settled may
+    // have pending payment_decisions (unmatched customer claims) —
+    // now that it's fully paid, none of them require human attention
+    // anymore. See reconcilePaymentDecisions() above; resolution is
+    // invoice-level (ALL pending decisions for this invoice), never
+    // attempts to attribute this specific payment to one claim.
+    await reconcilePaymentDecisions(
+        input.invoiceId,
+        result.invoiceNumber
     );
 } else {
     await logInvoiceActivity(
