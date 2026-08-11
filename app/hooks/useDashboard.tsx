@@ -35,6 +35,11 @@ const DASHBOARD_TABLES = [
     // Control the same way any other watched-table change does. Same
     // existing channel/debounce mechanism, just one more table.
     "payment_decisions",
+    // getMissionSummary()'s WORK metric now depends on
+    // emails.processing_status='received' — watched here for the same
+    // reason as payment_decisions above: same existing channel, one
+    // more table, no new subscription mechanism.
+    "emails",
 ];
 
 // Single shared dashboard fetch + Realtime subscription for the

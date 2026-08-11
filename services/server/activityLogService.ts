@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { ActivityType } from "@/lib/activityTypes";
+import { ActivityType, ActivityTypes } from "@/lib/activityTypes";
 import { mapActivityLog, EmployeeActivity } from "./activityMapper";
 
 export interface ActivityLogInput {
@@ -132,4 +132,52 @@ export async function getActivityHistory(
         ...mapActivityLog(row),
         createdAt: row.created_at,
     }));
+}
+
+// COMPLETED TODAY signal for Mission Card (services/server/
+// dashboardService.ts::getMissionSummary()) — meaningful completed
+// business outcomes only, not arbitrary activity_log rows.
+//
+// payment_recorded and invoice_paid are the only two activity_type
+// values services/server/paymentService.ts::recordPayment() ever
+// writes, and it writes exactly ONE of them per call (its own
+// if/else: invoice_paid when the payment settles the invoice in
+// full, payment_recorded otherwise) — so counting both together can
+// never double-count a single payment event.
+//
+// invoice_partially_paid and reminder_sent are deliberately excluded
+// from consideration entirely: grepping every logActivity/
+// logInvoiceActivity/logCustomerActivity call site in the codebase
+// confirms neither is ever actually written — both are unused enum
+// values.
+//
+// payment_decision_executed is deliberately EXCLUDED even though it
+// also fires on a successful execution: executePaymentDecision()
+// calls recordPayment() (which already logs one of the two types
+// above for that same payment) and then separately logs
+// payment_decision_executed for the SAME underlying event — including
+// it here would double-count one real payment outcome as two.
+export async function getPaymentOutcomesTodayCount(): Promise<number> {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const { count, error } = await supabase
+        .from("activity_log")
+        .select("*", {
+            head: true,
+            count: "exact",
+        })
+        .in("activity_type", [
+            ActivityTypes.PAYMENT_RECORDED,
+            ActivityTypes.INVOICE_PAID,
+        ])
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
+
+    if (error) throw error;
+
+    return count ?? 0;
 }

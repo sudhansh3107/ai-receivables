@@ -4,8 +4,9 @@ import {
     getOverdueInvoiceCount,
     getOverdueInvoiceCountLastMonth,
     getUnreviewedLowConfidenceInvoiceCount,
-    getInvoiceReviewsCompletedTodayCount,
 } from "@/services/invoiceService";
+
+import { getProcessingInvoiceFileCount } from "@/services/invoiceFileService";
 
 import {
     getRecoveredThisMonth,
@@ -14,6 +15,7 @@ import {
 
 import {
     getRecentActivity,
+    getPaymentOutcomesTodayCount,
 } from "./activityLogService";
 
 import {
@@ -26,14 +28,14 @@ import {
 
 import {
     getNextReminderForCustomer,
-    getRemindersNeedingAttentionCount,
-    getReminderFollowUpsActionedTodayCount,
 } from "./reminderService";
 
 import {
     getDecisionQueue,
     DecisionQueue,
 } from "./decisionService";
+
+import { getReceivedEmailCount } from "./emailService";
 
 export interface Metric {
     value: number;
@@ -63,18 +65,33 @@ export interface DashboardInsight {
     updatedAt: string;
 }
 
-// Mission = today's explicit actionable AR work, completed vs. still
-// relevant — not invoice status, not payment activity, not a
-// financial rollup (that's MetricsPanel). completedToday only ever
-// reflects explicit human action evidence (reminders.actioned_at /
-// invoices.confidence_reviewed_at) — never inferred from payments or
-// activity_log events.
+// Mission Card = Employee #001's own workload + human decisions +
+// completed outcomes, kept strictly non-overlapping:
+//   activeWork      — durable, EMPLOYEE-owned unresolved work only
+//                      (emails not yet gated/classified, invoice
+//                      files currently being extracted). Never
+//                      payment_decisions, reminders, low-confidence
+//                      invoices, or execution_status='executing' —
+//                      those are human-owned or purely transient.
+//   decisions       — human-owned unresolved work. Always identical
+//                      to Needs Your Decision's total, because it's
+//                      literally the same getDecisionQueue().totalCount
+//                      value, passed in by the caller rather than
+//                      recomputed here.
+//   completedToday  — meaningful completed business outcomes only
+//                      (see activityLogService.ts::
+//                      getPaymentOutcomesTodayCount()), never human
+//                      decision resolutions.
+//   completionPercentage — completedToday / (completedToday +
+//                      activeWork), deliberately excluding decisions
+//                      from the denominator (decisions are not
+//                      employee work, so they must never depress this
+//                      number). 100 when the denominator is 0.
 export interface MissionSummary {
+    activeWork: number;
+    decisions: number;
     completedToday: number;
-
-    remainingToday: number;
-    remainingFollowUps: number;
-    remainingReviews: number;
+    completionPercentage: number;
 }
 
 export interface DashboardData {
@@ -200,42 +217,65 @@ async function getDashboardInsight(): Promise<DashboardInsight | null> {
     };
 }
 
-async function getMissionSummary(): Promise<MissionSummary> {
-    const [
-        remainingFollowUps,
-        remainingReviews,
-        followUpsActionedToday,
-        reviewsCompletedToday,
-    ] = await Promise.all([
-        getRemindersNeedingAttentionCount(),
-        getUnreviewedLowConfidenceInvoiceCount(),
-        getReminderFollowUpsActionedTodayCount(),
-        getInvoiceReviewsCompletedTodayCount(),
-    ]);
+// completedToday is intentionally excluded from its own denominator's
+// "still owned by the employee" side, and decisions never enters the
+// formula at all — decisions are human-owned, so their volume must
+// never depress or inflate how "done" the employee's OWN work looks.
+function calculateCompletionPercentage(
+    completedToday: number,
+    activeWork: number
+): number {
+    const denominator = completedToday + activeWork;
+
+    if (denominator === 0) {
+        return 100;
+    }
+
+    const raw = (completedToday / denominator) * 100;
+
+    return Math.min(100, Math.max(0, Math.round(raw)));
+}
+
+// `decisions` is passed in rather than recomputed here so the Mission
+// Card's DECISIONS count is always the literal same number Needs Your
+// Decision shows (getDecisionQueue().totalCount) — never a second,
+// independently-computed definition that could drift out of sync.
+async function getMissionSummary(
+    decisions: number
+): Promise<MissionSummary> {
+    const [emailsReceived, invoiceFilesProcessing, completedToday] =
+        await Promise.all([
+            getReceivedEmailCount(),
+            getProcessingInvoiceFileCount(),
+            getPaymentOutcomesTodayCount(),
+        ]);
+
+    const activeWork = emailsReceived + invoiceFilesProcessing;
 
     return {
-        completedToday: followUpsActionedToday + reviewsCompletedToday,
-
-        remainingToday: remainingFollowUps + remainingReviews,
-        remainingFollowUps,
-        remainingReviews,
+        activeWork,
+        decisions,
+        completedToday,
+        completionPercentage: calculateCompletionPercentage(
+            completedToday,
+            activeWork
+        ),
     };
 }
 
 export async function getDashboard(): Promise<DashboardData> {
+    // decisionQueue is fetched once and its totalCount reused for
+    // MissionSummary.decisions below, rather than each independently
+    // recomputing getDecisionQueue() — guarantees the two dashboard
+    // surfaces can never disagree and avoids paying for the same
+    // aggregate query twice per dashboard load.
+    const decisionQueue = await getDecisionQueue();
 
-    const [
-        metrics,
-        activity,
-        decisionQueue,
-        insight,
-        mission,
-    ] = await Promise.all([
+    const [metrics, activity, insight, mission] = await Promise.all([
         getDashboardMetrics(),
         getRecentActivity(3),
-        getDecisionQueue(),
         getDashboardInsight(),
-        getMissionSummary(),
+        getMissionSummary(decisionQueue.totalCount),
     ]);
 
     return {

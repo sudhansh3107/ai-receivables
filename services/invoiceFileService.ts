@@ -85,3 +85,24 @@ export async function updateProcessingStatus(
     throw error;
   }
 }
+
+// Employee-owned WORK signal for Mission Card (services/server/
+// dashboardService.ts::getMissionSummary()): invoice files currently
+// being extracted — genuinely durable, autonomous, no human input
+// mid-flight. Counted at the file granularity (not upload_sessions)
+// so the same underlying work is never counted at two levels.
+export async function getProcessingInvoiceFileCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from("invoice_files")
+    .select("*", {
+      head: true,
+      count: "exact",
+    })
+    .eq("processing_status", "processing");
+
+  if (error) {
+    throw error;
+  }
+
+  return count ?? 0;
+}

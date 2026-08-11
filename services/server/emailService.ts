@@ -102,3 +102,23 @@ export async function markEmailIgnored(emailId: string) {
 
     if (error) throw error;
 }
+
+// Employee-owned WORK signal for Mission Card (services/server/
+// dashboardService.ts::getMissionSummary()): Gmail messages persisted
+// but not yet run through the AR relevance gate / classification pass
+// (see emailProcessingService.ts). Durable until the next sync+
+// classify run — never includes payment_decisions, reminders, or
+// invoice reviews, which are human-owned, not employee-owned.
+export async function getReceivedEmailCount(): Promise<number> {
+    const { count, error } = await supabase
+        .from("emails")
+        .select("*", {
+            head: true,
+            count: "exact",
+        })
+        .eq("processing_status", "received");
+
+    if (error) throw error;
+
+    return count ?? 0;
+}

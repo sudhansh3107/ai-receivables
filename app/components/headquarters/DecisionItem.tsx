@@ -265,13 +265,13 @@ export default function DecisionItem({
                   );
 
                   const sharedProps = {
-                    key: action.key,
                     "aria-label": action.ariaLabel ?? action.label,
                     title: action.ariaLabel ?? action.label,
                   };
 
                   return action.href ? (
                     <Link
+                      key={action.key}
                       {...sharedProps}
                       href={action.href}
                       className="inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[12px] font-semibold whitespace-nowrap shadow-sm transition-transform duration-150 hover:scale-[1.03] active:scale-[0.97]"
@@ -281,6 +281,7 @@ export default function DecisionItem({
                     </Link>
                   ) : (
                     <motion.button
+                      key={action.key}
                       {...sharedProps}
                       type="button"
                       whileHover={{ scale: 1.03 }}
