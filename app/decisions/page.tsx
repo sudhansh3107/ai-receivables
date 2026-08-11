@@ -9,6 +9,7 @@ import AppShell from "../components/layout/AppShell";
 import Page from "../components/ui/PageShell";
 import Card from "../components/ui/Card";
 import DecisionItem from "../components/headquarters/DecisionItem";
+import PaymentDecisionFeed from "../components/headquarters/PaymentDecisionFeed";
 import { tokens } from "@/lib/theme/tokens";
 
 import {
@@ -164,6 +165,8 @@ export default function DecisionsPage() {
                         </div>
                     )}
                 </Card>
+
+                <PaymentDecisionFeed />
             </Page>
         </AppShell>
     );

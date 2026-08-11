@@ -1,6 +1,53 @@
 import { supabase } from "@/lib/supabase";
 import { PaymentEmailMatchResult } from "@/services/server/paymentEmailMatchingService";
 
+export interface PendingPaymentDecision {
+    id: string;
+    emailId: string;
+
+    customerId: string | null;
+    customerName: string | null;
+
+    invoiceId: string | null;
+    invoiceNumber: string | null;
+
+    status: string;
+    executionStatus: string;
+    needsReviewReason: string | null;
+
+    proposedAmount: number | null;
+    proposedCurrency: string | null;
+    proposedPaymentDate: string | null;
+    proposedPaymentReference: string | null;
+    extractionConfidence: number | null;
+
+    matchEvidence: unknown;
+    executionError: string | null;
+
+    createdAt: string;
+}
+
+interface PendingPaymentDecisionRow {
+    id: string;
+    email_id: string;
+    customer_id: string | null;
+    invoice_id: string | null;
+    status: string;
+    execution_status: string;
+    needs_review_reason: string | null;
+    proposed_amount: number | null;
+    proposed_currency: string | null;
+    proposed_payment_date: string | null;
+    proposed_invoice_number: string | null;
+    proposed_payment_reference: string | null;
+    extraction_confidence: number | null;
+    match_evidence: unknown;
+    execution_error: string | null;
+    created_at: string;
+    customers: { company_name: string } | null;
+    invoices: { invoice_number: string } | null;
+}
+
 function toDateOnlyString(date: Date): string {
     return date.toISOString().slice(0, 10);
 }
@@ -130,4 +177,82 @@ export async function persistPaymentDecision(
     if (error) throw error;
 
     return data;
+}
+
+// Read-only display source for the payment-decision review UI (the
+// "future review UI" match_evidence above was captured for). Scoped
+// to status='pending' only — approved/rejected/executed decisions are
+// a separate, not-yet-built concern. Newest first, with the
+// customer/invoice context a review UI needs; every proposed_* column,
+// needs_review_reason, and match_evidence are preserved verbatim
+// (never re-derived) so the UI reflects exactly what the matcher
+// decided. Never approves, executes, or writes anything.
+export async function getPendingPaymentDecisions(): Promise<
+    PendingPaymentDecision[]
+> {
+    const { data, error } = await supabase
+        .from("payment_decisions")
+        .select(
+            `
+            id,
+            email_id,
+            customer_id,
+            invoice_id,
+            status,
+            execution_status,
+            needs_review_reason,
+            proposed_amount,
+            proposed_currency,
+            proposed_payment_date,
+            proposed_invoice_number,
+            proposed_payment_reference,
+            extraction_confidence,
+            match_evidence,
+            execution_error,
+            created_at,
+            customers ( company_name ),
+            invoices ( invoice_number )
+        `
+        )
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    const rows = (data ?? []) as unknown as PendingPaymentDecisionRow[];
+
+    return rows.map((row) => ({
+        id: row.id,
+        emailId: row.email_id,
+
+        customerId: row.customer_id,
+        customerName: row.customers?.company_name ?? null,
+
+        invoiceId: row.invoice_id,
+        invoiceNumber:
+            row.invoices?.invoice_number ??
+            row.proposed_invoice_number ??
+            null,
+
+        status: row.status,
+        executionStatus: row.execution_status,
+        needsReviewReason: row.needs_review_reason,
+
+        proposedAmount:
+            row.proposed_amount === null
+                ? null
+                : Number(row.proposed_amount),
+        proposedCurrency: row.proposed_currency,
+        proposedPaymentDate: row.proposed_payment_date,
+        proposedPaymentReference: row.proposed_payment_reference,
+        extractionConfidence:
+            row.extraction_confidence === null
+                ? null
+                : Number(row.extraction_confidence),
+
+        matchEvidence: row.match_evidence,
+        executionError: row.execution_error,
+
+        createdAt: row.created_at,
+    }));
 }
