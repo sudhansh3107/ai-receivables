@@ -41,6 +41,38 @@ export function mapActivityLog(
 
    switch (activity.activity_type as ActivityType) {
 
+    case ActivityTypes.PAYMENT_CLAIM_RECEIVED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "mail",
+
+            title: "Payment claim received",
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
+    case ActivityTypes.PAYMENT_CLAIM_MATCHED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "payment",
+
+            title: `Payment claim matched for ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
     case ActivityTypes.PAYMENT_RECORDED:
 
         return {

@@ -8,6 +8,11 @@ import { classifyEmail } from "@/services/server/emailClassificationService";
 import { evaluateEmailRelevance } from "@/lib/emailRelevanceGate";
 import { matchPaymentEmail } from "@/services/server/paymentEmailMatchingService";
 import { persistPaymentDecision } from "@/services/server/paymentDecisionService";
+import {
+    logActivity,
+    logInvoiceActivity,
+} from "@/services/server/activityLogService";
+import { ActivityTypes } from "@/lib/activityTypes";
 
 const DEFAULT_BATCH_SIZE = 10;
 
@@ -95,6 +100,31 @@ export async function processUnclassifiedEmails(
             // never executes a payment — it only ever produces a
             // durable, unapproved proposal via persistPaymentDecision().
             if (result.classification === "payment_received") {
+                // Discovery event only: the employee has determined an
+                // incoming email CLAIMS a payment was made — nothing
+                // more. Never implies verified/confirmed/recorded. Its
+                // own try/catch, separate from the matching attempt
+                // below, so a logging failure here can never prevent
+                // matching/persistPaymentDecision() from running.
+                try {
+                    await logActivity({
+                        activityType: ActivityTypes.PAYMENT_CLAIM_RECEIVED,
+                        description: `Received a payment claim from ${email.from_email}`,
+                        metadata: {
+                            fromEmail: email.from_email,
+                            subject: email.subject,
+                            receivedAt: email.received_at,
+                            confidence: result.confidence,
+                        },
+                    });
+                } catch (activityError) {
+                    console.error(
+                        "Activity Log - payment_claim_received failed for email:",
+                        email.id,
+                        activityError
+                    );
+                }
+
                 try {
                     const matchResult = await matchPaymentEmail({
                         subject: email.subject,
@@ -102,6 +132,39 @@ export async function processUnclassifiedEmails(
                         fromEmail: email.from_email,
                         receivedAt: email.received_at,
                     });
+
+                    // Structural match only — customer/invoice/amount
+                    // are internally consistent, not bank-confirmed.
+                    // Its own try/catch so a logging failure can never
+                    // prevent persistPaymentDecision() below from
+                    // running for either a "ready" or "needs_review"
+                    // result — that write is the load-bearing one.
+                    if (matchResult.status === "ready") {
+                        try {
+                            await logInvoiceActivity(
+                                matchResult.invoiceId,
+                                matchResult.customerId,
+                                ActivityTypes.PAYMENT_CLAIM_MATCHED,
+                                `Payment claim matched to invoice ${matchResult.invoiceNumber}`,
+                                {
+                                    amount: matchResult.amount,
+                                    currency: matchResult.currency,
+                                    invoiceNumber: matchResult.invoiceNumber,
+                                    paymentDate:
+                                        matchResult.paymentDate.toISOString(),
+                                    paymentReference:
+                                        matchResult.paymentReference,
+                                    confidence: matchResult.confidence,
+                                }
+                            );
+                        } catch (activityError) {
+                            console.error(
+                                "Activity Log - payment_claim_matched failed for email:",
+                                email.id,
+                                activityError
+                            );
+                        }
+                    }
 
                     await persistPaymentDecision(
                         email.id,
