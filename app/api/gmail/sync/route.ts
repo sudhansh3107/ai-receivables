@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getGmailClientForConnection } from "@/lib/google";
 import {
     getPrimaryGmailConnection,
@@ -10,7 +10,11 @@ import {
     EmailProcessingResult,
 } from "@/services/server/emailProcessingService";
 
-export async function POST() {
+// Shared by both POST (manual trigger) and GET (Vercel Cron) so the
+// sync + processing pipeline is never duplicated between them — the
+// only difference between the two handlers is how the request is
+// authorized.
+async function runGmailSync(): Promise<NextResponse> {
     try {
         const connection = await getPrimaryGmailConnection();
 
@@ -81,4 +85,41 @@ export async function POST() {
             { status: 500 }
         );
     }
+}
+
+// Manual trigger — unchanged behavior, no auth (matches this route's
+// existing, pre-existing access model).
+export async function POST(): Promise<NextResponse> {
+    return runGmailSync();
+}
+
+// Vercel Cron trigger. Vercel invokes cron job paths with GET and
+// sends the configured CRON_SECRET as `Authorization: Bearer
+// <CRON_SECRET>` — verified here before any sync work runs. The
+// response never echoes the secret or anything derived from it, only
+// a generic 401 on missing/invalid auth.
+export async function GET(request: NextRequest): Promise<NextResponse> {
+    const cronSecret = process.env.CRON_SECRET;
+
+    if (!cronSecret) {
+        console.error(
+            "Gmail Sync (cron) - CRON_SECRET is not configured on the server"
+        );
+
+        return NextResponse.json(
+            { error: "Unauthorized" },
+            { status: 401 }
+        );
+    }
+
+    const authHeader = request.headers.get("authorization");
+
+    if (authHeader !== `Bearer ${cronSecret}`) {
+        return NextResponse.json(
+            { error: "Unauthorized" },
+            { status: 401 }
+        );
+    }
+
+    return runGmailSync();
 }

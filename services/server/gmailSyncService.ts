@@ -1,5 +1,6 @@
 import { gmail_v1 } from "googleapis";
 import { parseGmailMessage } from "@/lib/gmail/parse-email";
+import { isSystemGeneratedSubject } from "@/lib/emailSubjectFilter";
 import { upsertEmailFromGmail } from "@/services/server/emailService";
 import { updateLastHistoryId } from "@/services/server/gmailConnectionService";
 
@@ -16,6 +17,7 @@ export interface SyncResult {
     resynced: boolean;
     attempted: number;
     persisted: number;
+    skipped: number;
     failed: number;
     persistedMessageIds: string[];
     failures: SyncFailure[];
@@ -24,6 +26,7 @@ export interface SyncResult {
 
 interface MessageProcessingResult {
     persistedIds: string[];
+    skippedIds: string[];
     failures: SyncFailure[];
 }
 
@@ -45,6 +48,7 @@ export async function processMessages(
     messageIds: (string | null | undefined)[]
 ): Promise<MessageProcessingResult> {
     const persistedIds: string[] = [];
+    const skippedIds: string[] = [];
     const failures: SyncFailure[] = [];
 
     for (const messageId of messageIds) {
@@ -69,6 +73,18 @@ export async function processMessages(
                 messageResponse.data
             );
 
+            // Deterministic pre-persistence subject filter: obviously
+            // system-generated mail (calendar responses/invites,
+            // auto-replies, bounce notifications) never becomes an
+            // `emails` row, so it never reaches the AR relevance gate
+            // or costs an LLM classification call. Not a failure —
+            // just skipped, and the rest of the batch continues.
+            if (isSystemGeneratedSubject(normalized.subject)) {
+                skippedIds.push(messageId);
+
+                continue;
+            }
+
             await upsertEmailFromGmail(normalized);
 
             persistedIds.push(messageId);
@@ -89,7 +105,7 @@ export async function processMessages(
         }
     }
 
-    return { persistedIds, failures };
+    return { persistedIds, skippedIds, failures };
 }
 
 // Captures the mailbox's historyId BEFORE listing messages, not
@@ -125,10 +141,11 @@ export async function performInitialSync(
 
     const messageRefs = listResponse.data.messages ?? [];
 
-    const { persistedIds, failures } = await processMessages(
-        gmail,
-        messageRefs.map((ref) => ref.id)
-    );
+    const { persistedIds, skippedIds, failures } =
+        await processMessages(
+            gmail,
+            messageRefs.map((ref) => ref.id)
+        );
 
     await updateLastHistoryId(connectionId, baselineHistoryId);
 
@@ -138,6 +155,7 @@ export async function performInitialSync(
         resynced,
         attempted: messageRefs.length,
         persisted: persistedIds.length,
+        skipped: skippedIds.length,
         failed: failures.length,
         persistedMessageIds: persistedIds,
         failures,
@@ -183,10 +201,8 @@ export async function performIncrementalSync(
             historyResponse.data.nextPageToken ?? undefined;
     } while (pageToken);
 
-    const { persistedIds, failures } = await processMessages(
-        gmail,
-        [...addedMessageIds]
-    );
+    const { persistedIds, skippedIds, failures } =
+        await processMessages(gmail, [...addedMessageIds]);
 
     await updateLastHistoryId(connectionId, newHistoryId);
 
@@ -196,6 +212,7 @@ export async function performIncrementalSync(
         resynced: false,
         attempted: addedMessageIds.size,
         persisted: persistedIds.length,
+        skipped: skippedIds.length,
         failed: failures.length,
         persistedMessageIds: persistedIds,
         failures,
