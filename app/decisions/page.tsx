@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Clock3, FileWarning, LucideIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import Card from "../components/ui/Card";
 import DecisionItem from "../components/headquarters/DecisionItem";
 import PaymentDecisionFeed from "../components/headquarters/PaymentDecisionFeed";
 import { tokens } from "@/lib/theme/tokens";
+import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
 
 import {
     getDecisionQueue,
@@ -19,6 +20,19 @@ import {
 } from "@/services/server/decisionService";
 import { markInvoiceReviewed } from "@/services/invoiceService";
 import { markReminderActioned } from "@/services/server/reminderService";
+
+// Every table getDecisionQueue()'s candidates are derived from:
+// low_confidence from invoices, payment_follow_up from reminders. Kept
+// as a module-level constant for a stable reference across renders.
+const DECISION_TABLES = ["payment_decisions", "invoices", "reminders"];
+
+// No dashboard cap here — the full currently-actionable, ranked queue,
+// same ranking definitions as the dashboard. Module-level so it's a
+// stable fetchData reference for useRealtimeRefresh.
+async function fetchDecisionItems(): Promise<DecisionCandidate[]> {
+    const queue = await getDecisionQueue(Infinity);
+    return queue.items;
+}
 
 const KIND_STYLES: Record<
     DecisionKind,
@@ -44,25 +58,16 @@ const KIND_STYLES: Record<
 };
 
 export default function DecisionsPage() {
-    const [items, setItems] = useState<DecisionCandidate[] | null>(null);
-    const [error, setError] = useState<Error | null>(null);
+    const {
+        data: items,
+        error,
+        refresh,
+    } = useRealtimeRefresh<DecisionCandidate[]>(
+        DECISION_TABLES,
+        fetchDecisionItems
+    );
+
     const [pendingId, setPendingId] = useState<string | null>(null);
-
-    const load = useCallback(async () => {
-        try {
-            // No dashboard cap here — the full currently-actionable,
-            // ranked queue, same ranking definitions as the dashboard.
-            const queue = await getDecisionQueue(Infinity);
-            setItems(queue.items);
-            setError(null);
-        } catch (err) {
-            setError(err as Error);
-        }
-    }, []);
-
-    useEffect(() => {
-        void load();
-    }, [load]);
 
     async function handleAction(
         id: string,
@@ -78,7 +83,7 @@ export default function DecisionsPage() {
                 await markReminderActioned(actionId);
             }
 
-            await load();
+            await refresh();
         } catch (err) {
             console.error(err);
             toast.error("Couldn't update this item. Please try again.");

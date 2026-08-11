@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
     ArrowLeft,
@@ -19,11 +18,21 @@ import Card from "../components/ui/Card";
 import ActivityItem from "../components/headquarters/ActivityItem";
 import { tokens } from "@/lib/theme/tokens";
 import { toLocalDateString } from "@/lib/date";
+import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
 
 import {
     getActivityHistory,
     ActivityHistoryEntry,
 } from "@/services/server/activityLogService";
+
+const ACTIVITY_TABLES = ["activity_log"];
+
+// Module-level so it's a stable fetchData reference for
+// useRealtimeRefresh; getActivityHistory() takes no session-scoped
+// argument here (unlike the upload modal's per-session feed).
+function fetchActivityHistory(): Promise<ActivityHistoryEntry[]> {
+    return getActivityHistory();
+}
 
 const iconMap = {
     payment: IndianRupee,
@@ -90,24 +99,9 @@ function groupByDate(entries: ActivityHistoryEntry[]): ActivityGroup[] {
 }
 
 export default function ActivityPage() {
-    const [entries, setEntries] = useState<ActivityHistoryEntry[] | null>(
-        null
-    );
-    const [error, setError] = useState<Error | null>(null);
-
-    const load = useCallback(async () => {
-        try {
-            const history = await getActivityHistory();
-            setEntries(history);
-            setError(null);
-        } catch (err) {
-            setError(err as Error);
-        }
-    }, []);
-
-    useEffect(() => {
-        void load();
-    }, [load]);
+    const { data: entries, error } = useRealtimeRefresh<
+        ActivityHistoryEntry[]
+    >(ACTIVITY_TABLES, fetchActivityHistory);
 
     const groups = entries ? groupByDate(entries) : [];
 

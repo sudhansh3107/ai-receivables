@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import Card from "../ui/Card";
 import { tokens } from "@/lib/theme/tokens";
 import {
     getPendingPaymentDecisions,
     PendingPaymentDecision,
 } from "@/services/server/paymentDecisionService";
+import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
+
+const PAYMENT_DECISION_TABLES = ["payment_decisions"];
 
 const REVIEW_REASON_LABELS: Record<string, string> = {
     customer_not_found: "Customer not found",
@@ -50,35 +51,9 @@ function formatConfidence(confidence: number | null): string {
 // (POST /api/payment-decisions/[id]/approve and .../execute) are
 // wired up separately once this display is confirmed correct.
 export default function PaymentDecisionFeed() {
-    const [decisions, setDecisions] = useState<
-        PendingPaymentDecision[] | null
-    >(null);
-    const [error, setError] = useState(false);
-
-    // Promise-chained (not async/await) so the setState calls live
-    // inside .then()/.catch() callbacks rather than directly in the
-    // effect's own function body — avoids react-hooks/set-state-in-effect
-    // while keeping identical fetch-on-mount behavior, plus a stale-
-    // response guard so an unmounted instance never sets state.
-    useEffect(() => {
-        let cancelled = false;
-
-        getPendingPaymentDecisions()
-            .then((data) => {
-                if (cancelled) return;
-                setDecisions(data);
-                setError(false);
-            })
-            .catch((err) => {
-                console.error(err);
-                if (cancelled) return;
-                setError(true);
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+    const { data: decisions, error } = useRealtimeRefresh<
+        PendingPaymentDecision[]
+    >(PAYMENT_DECISION_TABLES, getPendingPaymentDecisions);
 
     if (error || decisions === null || decisions.length === 0) {
         return null;
