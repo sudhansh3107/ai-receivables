@@ -29,6 +29,12 @@ const DASHBOARD_TABLES = [
     "invoice_files",
     "upload_sessions",
     "reminders",
+    // getDashboard() -> getDecisionQueue() now folds pending
+    // payment_decisions into decisionQueue (DecisionFeed) — watched
+    // here so an approve/new-decision change refreshes Mission
+    // Control the same way any other watched-table change does. Same
+    // existing channel/debounce mechanism, just one more table.
+    "payment_decisions",
 ];
 
 // Single shared dashboard fetch + Realtime subscription for the

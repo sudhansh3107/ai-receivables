@@ -11,18 +11,10 @@ import {
     PendingPaymentDecision,
 } from "@/services/server/paymentDecisionService";
 import { useRealtimeRefresh } from "../../hooks/useRealtimeRefresh";
+import { approvePaymentDecisionRequest } from "@/lib/paymentDecisionActions";
+import { PAYMENT_DECISION_REVIEW_REASON_LABELS } from "@/lib/paymentDecisionReviewReasons";
 
 const PAYMENT_DECISION_TABLES = ["payment_decisions"];
-
-const REVIEW_REASON_LABELS: Record<string, string> = {
-    customer_not_found: "Customer not found",
-    payment_facts_incomplete: "Missing payment details",
-    low_extraction_confidence: "Low extraction confidence",
-    invoice_not_found: "Invoice not found",
-    currency_mismatch: "Currency mismatch",
-    invalid_amount: "Invalid amount",
-    overpayment: "Overpayment",
-};
 
 function formatCurrency(
     amount: number | null,
@@ -81,19 +73,7 @@ export default function PaymentDecisionFeed() {
         setApprovingId(decisionId);
 
         try {
-            const response = await fetch(
-                `/api/payment-decisions/${decisionId}/approve`,
-                { method: "POST" }
-            );
-
-            const result = await response.json();
-
-            if (!response.ok || !result.success) {
-                throw new Error(
-                    result.error ??
-                        "Failed to approve payment decision."
-                );
-            }
+            await approvePaymentDecisionRequest(decisionId);
 
             // Immediate feedback — the existing payment_decisions
             // Realtime subscription above will also independently
@@ -228,7 +208,7 @@ export default function PaymentDecisionFeed() {
                                 >
                                     {isIncomplete
                                         ? "Missing payment details (e.g. payment date) — cannot be safely approved yet."
-                                        : REVIEW_REASON_LABELS[
+                                        : PAYMENT_DECISION_REVIEW_REASON_LABELS[
                                               decision.needsReviewReason
                                           ] ?? decision.needsReviewReason}
                                 </p>

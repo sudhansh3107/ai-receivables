@@ -10,13 +10,24 @@ import {
     ReminderNeedingAttention,
 } from "./reminderService";
 
-// Only two countable action types, matching MissionCard's action
-// semantics exactly — there is no independent "overdue invoice"
-// candidate. An overdue invoice needing follow-up is represented by
-// its reminder (every invoice gets exactly one reminder, scheduled
-// at its due date), so tracking both would double-count the same
-// real-world work item.
-export type DecisionKind = "low_confidence" | "payment_follow_up";
+import {
+    getPendingPaymentDecisions,
+    PendingPaymentDecision,
+} from "./paymentDecisionService";
+
+import { PAYMENT_DECISION_REVIEW_REASON_LABELS } from "@/lib/paymentDecisionReviewReasons";
+
+// An overdue invoice needing follow-up is represented by its reminder
+// (every invoice gets exactly one reminder, scheduled at its due
+// date), so tracking both would double-count the same real-world work
+// item — low_confidence/payment_follow_up remain the only two
+// countable review/follow-up types. payment_decision is a distinct
+// third kind: a proposed money-moving action awaiting human approval,
+// not a routine review/follow-up task.
+export type DecisionKind =
+    | "low_confidence"
+    | "payment_follow_up"
+    | "payment_decision";
 
 export interface DecisionCandidate {
     id: string;
@@ -26,6 +37,11 @@ export interface DecisionCandidate {
     title: string;
     subtitle: string;
     reasons: string[] | null;
+
+    // Only meaningful for kind === "payment_decision" — null means the
+    // matcher classified this as "ready" (no review needed); any
+    // other value is the existing needs_review_reason verbatim.
+    needsReviewReason?: string | null;
 }
 
 // The dashboard shows a bounded, prioritized slice; the badge/count
@@ -121,17 +137,22 @@ async function getRiskRankByCustomer(
 // fields dominate later ones). Every value is oriented so a SMALLER
 // number sorts first (= higher priority):
 //
-//   1. kindTier        0 = overdue follow-up, 1 = due-today
-//                      follow-up, 2 = low-confidence review.
-//                      Payment follow-up always outranks review —
-//                      it represents unresolved cash collection.
-//   2. -daysOverdue     more overdue sorts first (0 for review items)
+//   1. kindTier        0 = payment decision, 1 = overdue follow-up,
+//                      2 = due-today follow-up, 3 = low-confidence
+//                      review. A pending payment decision represents
+//                      money that has already arrived and only needs
+//                      a human nod — it outranks both follow-up
+//                      (unresolved, but not yet in hand) and review
+//                      (no cash impact at all).
+//   2. -daysOverdue     more overdue sorts first (0 for review/
+//                       payment-decision items)
 //   3. -amountAtRisk    balance_due (follow-up) / invoice_amount
-//                       (review) — larger amount sorts first
+//                       (review) / proposed_amount (payment decision)
+//                       — larger amount sorts first
 //   4. riskRank         customer_insights.risk_level, high(0)..low(3);
 //                       neutral (2) when unavailable
 //   5. -reminderStage   a reminder ignored through more stages sorts
-//                       first (0 for review items)
+//                       first (0 for review/payment-decision items)
 //   6. ageTiebreakMs    epoch ms of scheduled_at/created_at — the
 //                       older item sorts first, guaranteeing a total
 //                       order so no two candidates can tie
@@ -163,7 +184,7 @@ function buildLowConfidenceCandidates(
             reasons: invoice.confidenceReasons,
         },
         tuple: [
-            2,
+            3,
             0,
             -invoice.amount,
             riskByCustomer.get(invoice.customerId) ?? NEUTRAL_RISK_RANK,
@@ -198,12 +219,72 @@ function buildPaymentFollowUpCandidates(
                 reasons: null,
             },
             tuple: [
-                isOverdue ? 0 : 1,
+                isOverdue ? 1 : 2,
                 -overdueDays,
                 -reminder.balanceDue,
                 riskByCustomer.get(reminder.customerId) ?? NEUTRAL_RISK_RANK,
                 -reminder.reminderStage,
                 new Date(reminder.scheduledAt).getTime(),
+            ],
+        };
+    });
+}
+
+// subtitle intentionally embeds the review-reason label directly (not
+// via DecisionCandidate.reasons, whose rendering in DecisionItem is
+// hardcoded to low_confidence's "What I confirmed" / "based on low
+// confidence" framing — reusing it for a payment decision's review
+// reason would misrepresent it) so a needs-review payment decision is
+// clearly identifiable at a glance without touching DecisionItem's
+// existing low_confidence rendering path at all.
+function buildPaymentDecisionCandidates(
+    decisions: PendingPaymentDecision[],
+    riskByCustomer: Map<string, number>
+): RankedCandidate[] {
+    return decisions.map((decision) => {
+        const amountLabel =
+            decision.proposedAmount == null
+                ? "Unknown amount"
+                : formatCurrency(
+                      decision.proposedAmount,
+                      decision.proposedCurrency ?? "INR"
+                  );
+
+        const reviewReasonLabel = decision.needsReviewReason
+            ? PAYMENT_DECISION_REVIEW_REASON_LABELS[
+                  decision.needsReviewReason
+              ] ?? decision.needsReviewReason
+            : null;
+
+        return {
+            candidate: {
+                id: `payment_decision:${decision.id}`,
+                kind: "payment_decision",
+                actionId: decision.id,
+                customerName: decision.customerName ?? "Unknown customer",
+                title: reviewReasonLabel
+                    ? "Payment needs review"
+                    : "Payment awaiting approval",
+                subtitle: reviewReasonLabel
+                    ? `Invoice ${
+                          decision.invoiceNumber ?? "unknown"
+                      } · ${amountLabel} · ${reviewReasonLabel}`
+                    : `Invoice ${
+                          decision.invoiceNumber ?? "unknown"
+                      } · ${amountLabel}`,
+                reasons: null,
+                needsReviewReason: decision.needsReviewReason,
+            },
+            tuple: [
+                0,
+                0,
+                -(decision.proposedAmount ?? 0),
+                decision.customerId
+                    ? riskByCustomer.get(decision.customerId) ??
+                      NEUTRAL_RISK_RANK
+                    : NEUTRAL_RISK_RANK,
+                0,
+                new Date(decision.createdAt).getTime(),
             ],
         };
     });
@@ -222,20 +303,40 @@ function compareTuples(a: PriorityTuple, b: PriorityTuple): number {
 // and returns only the top `topN` for display alongside the true
 // uncapped total. `topN` may be Infinity (e.g. the /decisions page)
 // to return every candidate as `items`.
-export async function getDecisionQueue(topN = 3): Promise<DecisionQueue> {
-    const [invoices, reminders] = await Promise.all([
+//
+// `includePaymentDecisions` defaults to true (Mission Control's
+// DecisionFeed needs payment decisions folded into this same queue —
+// that's the whole point of this parameter existing). /decisions
+// passes false for its own generic list specifically because that
+// page already has a separate, more detailed "Payment Decisions"
+// section (PaymentDecisionFeed) — without this, payment decisions
+// would render twice on that one page. This is the "minimal
+// adjustment" the shared model needs, not new business logic: the
+// underlying data/ranking/eligibility rules are identical either way.
+export async function getDecisionQueue(
+    topN = 3,
+    includePaymentDecisions = true
+): Promise<DecisionQueue> {
+    const [invoices, reminders, paymentDecisions] = await Promise.all([
         getInvoicesNeedingReviewDetails(),
         getRemindersNeedingAttention(),
+        includePaymentDecisions
+            ? getPendingPaymentDecisions()
+            : Promise.resolve([]),
     ]);
 
     const riskByCustomer = await getRiskRankByCustomer([
         ...invoices.map((invoice) => invoice.customerId),
         ...reminders.map((reminder) => reminder.customerId),
+        ...paymentDecisions
+            .map((decision) => decision.customerId)
+            .filter((id): id is string => id !== null),
     ]);
 
     const ranked = [
         ...buildLowConfidenceCandidates(invoices, riskByCustomer),
         ...buildPaymentFollowUpCandidates(reminders, riskByCustomer),
+        ...buildPaymentDecisionCandidates(paymentDecisions, riskByCustomer),
     ].sort((a, b) => compareTuples(a.tuple, b.tuple));
 
     return {

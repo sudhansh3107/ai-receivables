@@ -22,15 +22,24 @@ import { markInvoiceReviewed } from "@/services/invoiceService";
 import { markReminderActioned } from "@/services/server/reminderService";
 
 // Every table getDecisionQueue()'s candidates are derived from:
-// low_confidence from invoices, payment_follow_up from reminders. Kept
-// as a module-level constant for a stable reference across renders.
+// low_confidence from invoices, payment_follow_up from reminders, and
+// (were it included here) payment_decision from payment_decisions.
+// Kept as a module-level constant for a stable reference across
+// renders.
 const DECISION_TABLES = ["payment_decisions", "invoices", "reminders"];
 
 // No dashboard cap here — the full currently-actionable, ranked queue,
 // same ranking definitions as the dashboard. Module-level so it's a
 // stable fetchData reference for useRealtimeRefresh.
+//
+// includePaymentDecisions=false: this page already has its own,
+// more detailed "Payment Decisions" section below (PaymentDecisionFeed)
+// — including them here too would render every payment decision
+// twice on this one page. Excluding them from this generic list is
+// the "minimal adjustment" the shared getDecisionQueue() model needs;
+// the underlying data/eligibility rules are unchanged.
 async function fetchDecisionItems(): Promise<DecisionCandidate[]> {
-    const queue = await getDecisionQueue(Infinity);
+    const queue = await getDecisionQueue(Infinity, false);
     return queue.items;
 }
 
@@ -40,7 +49,7 @@ const KIND_STYLES: Record<
         icon: LucideIcon;
         iconColor: string;
         iconBackground: string;
-        actionLabel: string;
+        actionLabel?: string;
     }
 > = {
     low_confidence: {
@@ -54,6 +63,15 @@ const KIND_STYLES: Record<
         iconColor: tokens.status.info.text,
         iconBackground: tokens.status.info.background,
         actionLabel: "Mark follow-up done",
+    },
+    // Present only to satisfy Record<DecisionKind, ...> — this page's
+    // own fetchDecisionItems() excludes payment_decision candidates
+    // (see includePaymentDecisions=false above), so this entry is
+    // never actually rendered here.
+    payment_decision: {
+        icon: Clock3,
+        iconColor: tokens.status.info.text,
+        iconBackground: tokens.status.info.background,
     },
 };
 

@@ -1,9 +1,21 @@
 "use client";
 
 import { motion } from "motion/react";
+import Link from "next/link";
 import { LucideIcon, ChevronRight } from "lucide-react";
 import { tokens } from "@/lib/theme/tokens";
 import Button from "../ui/Button";
+
+export interface DecisionHoverAction {
+  key: string;
+  label: string;
+  // Either a navigation target (rendered as a Link) or a click
+  // handler (rendered as a Button) — a single action never needs both.
+  href?: string;
+  onClick?: () => void;
+  pending?: boolean;
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+}
 
 interface DecisionItemProps {
   icon: LucideIcon;
@@ -18,6 +30,12 @@ interface DecisionItemProps {
   actionLabel?: string;
   onAction?: () => void;
   actionPending?: boolean;
+
+  // Hover-revealed action row — distinct from actionLabel/onAction
+  // above (which stays permanently visible, unchanged, for
+  // low_confidence/payment_follow_up). Used by payment_decision items,
+  // which may offer more than one contextual action.
+  hoverActions?: DecisionHoverAction[];
 }
 
 export default function DecisionItem({
@@ -31,8 +49,11 @@ export default function DecisionItem({
   actionLabel,
   onAction,
   actionPending = false,
+  hoverActions,
 }: DecisionItemProps) {
   const hasAction = Boolean(actionLabel && onAction);
+  const hasHoverActions = Boolean(hoverActions && hoverActions.length > 0);
+  const hasBottomActions = hasAction || hasHoverActions;
 
   const icon = (
     <motion.div
@@ -117,10 +138,14 @@ export default function DecisionItem({
         duration-300
         hover:border-[#E1D4C5]
         hover:bg-[#F9F6F2]
-        ${hasAction ? "flex flex-col" : "flex items-center justify-between"}
+        ${
+          hasBottomActions
+            ? "flex flex-col"
+            : "flex items-center justify-between"
+        }
       `}
     >
-      {hasAction ? (
+      {hasBottomActions ? (
         <>
           {/* Icon + text — full row width, nothing competing for space */}
 
@@ -129,16 +154,57 @@ export default function DecisionItem({
             {text}
           </div>
 
-          {/* Action — its own row, fully visible inside the card */}
+          {/* Action — its own row. Permanently visible for the
+              existing single-action case (actionLabel/onAction,
+              unchanged); hover-revealed for hoverActions. */}
 
-          <div className="mt-4 flex justify-end">
-            <Button
-              variant="secondary"
-              onClick={onAction}
-              disabled={actionPending}
-            >
-              {actionPending ? "Saving…" : actionLabel}
-            </Button>
+          <div
+            className={`
+              mt-4
+              flex
+              justify-end
+              gap-2
+              ${
+                hasHoverActions
+                  ? "opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100"
+                  : ""
+              }
+            `}
+          >
+            {hasAction && (
+              <Button
+                variant="secondary"
+                onClick={onAction}
+                disabled={actionPending}
+              >
+                {actionPending ? "Saving…" : actionLabel}
+              </Button>
+            )}
+
+            {hoverActions?.map((action) =>
+              action.href ? (
+                <Link
+                  key={action.key}
+                  href={action.href}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border px-5 text-sm font-medium whitespace-nowrap transition-colors duration-200"
+                  style={{
+                    borderColor: tokens.semantic.border,
+                    color: tokens.semantic.textPrimary,
+                  }}
+                >
+                  {action.label}
+                </Link>
+              ) : (
+                <Button
+                  key={action.key}
+                  variant={action.variant ?? "secondary"}
+                  onClick={action.onClick}
+                  disabled={action.pending}
+                >
+                  {action.pending ? "…" : action.label}
+                </Button>
+              )
+            )}
           </div>
         </>
       ) : (

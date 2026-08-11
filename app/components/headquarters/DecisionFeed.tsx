@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import {
   ArrowRight,
+  Banknote,
   Clock3,
   FileWarning,
   LucideIcon,
@@ -12,12 +13,16 @@ import {
 import { toast } from "sonner";
 
 import Card from "../ui/Card";
-import DecisionItem from "./DecisionItem";
+import DecisionItem, { DecisionHoverAction } from "./DecisionItem";
 import { useDashboard } from "@/app/hooks/useDashboard";
 import { tokens } from "@/lib/theme/tokens";
-import type { DecisionKind } from "@/services/server/decisionService";
+import type {
+  DecisionCandidate,
+  DecisionKind,
+} from "@/services/server/decisionService";
 import { markInvoiceReviewed } from "@/services/invoiceService";
 import { markReminderActioned } from "@/services/server/reminderService";
+import { approvePaymentDecisionRequest } from "@/lib/paymentDecisionActions";
 
 const KIND_STYLES: Record<
   DecisionKind,
@@ -25,7 +30,9 @@ const KIND_STYLES: Record<
     icon: LucideIcon;
     iconColor: string;
     iconBackground: string;
-    actionLabel: string;
+    // Absent for payment_decision — it uses hoverActions instead of
+    // the single always-visible action button the other two kinds use.
+    actionLabel?: string;
   }
 > = {
   low_confidence: {
@@ -39,6 +46,11 @@ const KIND_STYLES: Record<
     iconColor: tokens.status.info.text,
     iconBackground: tokens.status.info.background,
     actionLabel: "Mark follow-up done",
+  },
+  payment_decision: {
+    icon: Banknote,
+    iconColor: tokens.status.info.text,
+    iconBackground: tokens.status.info.background,
   },
 };
 
@@ -79,6 +91,66 @@ export default function DecisionFeed() {
     } finally {
       setPendingId(null);
     }
+  }
+
+  // Approve-only: never calls the execute endpoint. Only transitions
+  // an already-"ready" (needsReviewReason === null) payment decision
+  // from pending -> approved via the existing approve endpoint.
+  async function handleApprovePaymentDecision(
+    candidateId: string,
+    decisionId: string
+  ) {
+    setPendingId(candidateId);
+
+    try {
+      await approvePaymentDecisionRequest(decisionId);
+      await refresh();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        "Couldn't approve this payment decision. Please try again."
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  // Only a decision the matcher itself already classified as "ready"
+  // (needsReviewReason === null) gets the one-click Approve action —
+  // an existing distinction already encoded upstream
+  // (PaymentEmailMatchResult's "ready" vs "needs_review" statuses),
+  // not a new rule invented here. Any needs_review_reason routes to
+  // the existing /decisions review surface instead — "escalate" has
+  // no dedicated existing mechanism (no ticketing/assignment system
+  // in this codebase), so Review is the one existing-mechanism action
+  // offered for that case.
+  function buildHoverActions(
+    decision: DecisionCandidate
+  ): DecisionHoverAction[] | undefined {
+    if (decision.kind !== "payment_decision") {
+      return undefined;
+    }
+
+    if (decision.needsReviewReason == null) {
+      return [
+        {
+          key: "approve",
+          label: "Approve",
+          variant: "primary",
+          pending: pendingId === decision.id,
+          onClick: () =>
+            handleApprovePaymentDecision(decision.id, decision.actionId),
+        },
+      ];
+    }
+
+    return [
+      {
+        key: "review",
+        label: "Review",
+        href: "/decisions",
+      },
+    ];
   }
 
   return (
@@ -138,13 +210,17 @@ export default function DecisionFeed() {
                   }
                   actionLabel={style.actionLabel}
                   actionPending={pendingId === decision.id}
-                  onAction={() =>
-                    handleAction(
-                      decision.id,
-                      decision.kind,
-                      decision.actionId
-                    )
+                  onAction={
+                    decision.kind === "payment_decision"
+                      ? undefined
+                      : () =>
+                          handleAction(
+                            decision.id,
+                            decision.kind,
+                            decision.actionId
+                          )
                   }
+                  hoverActions={buildHoverActions(decision)}
                 />
               );
             })}
