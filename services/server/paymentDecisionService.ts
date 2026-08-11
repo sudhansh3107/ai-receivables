@@ -320,6 +320,24 @@ async function logWaitCompletedForResurfacedDecisions(
 // Feed entry logged via logWaitCompletedForResurfacedDecisions() above
 // when a deferred decision resurfaces, which is idempotent and does
 // not touch payment_decisions itself.
+//
+// needs_review_reason='customer_not_found' rows are excluded below:
+// matchPaymentEmail() (paymentEmailMatchingService.ts) returns that
+// reason with customerId/invoiceId both null and never even attempts
+// extraction, so every proposed_* column on the resulting row is also
+// null. There is no sender to reply to, so Request Proof always
+// rejects with missing_customer_email for these
+// (paymentProofRequestService.ts), and nothing ever resolves them
+// (resolvePaymentDecisionsForSettledInvoice() matches on invoice_id,
+// which is null here) — they are not actionable, only noise that
+// previously rendered as "Unknown customer / Invoice unknown / Unknown
+// amount". The underlying row is left completely untouched (still
+// status='pending' in the database); this only removes it from this
+// display query. This is the single source both Mission Control's
+// DecisionFeed (via decisionService.ts::getDecisionQueue()) and
+// /decisions' PaymentDecisionFeed read from, so excluding it here
+// removes these cards from both surfaces (and from the Mission Card's
+// "Decisions" count, which reuses the same totalCount) at once.
 export async function getPendingPaymentDecisions(): Promise<
     PendingPaymentDecision[]
 > {
@@ -358,6 +376,13 @@ export async function getPendingPaymentDecisions(): Promise<
         `
         )
         .eq("status", "pending")
+        // Plain .neq() would NOT work here: PostgREST compiles it to SQL
+        // `<>`, and under three-valued logic `NULL <> 'customer_not_found'`
+        // is NULL (not true), which would silently drop every "ready"
+        // (needs_review_reason IS NULL) awaiting-approval decision too.
+        // Explicitly allowing IS NULL alongside != is the same OR-group
+        // pattern already used for deferred_at below.
+        .or("needs_review_reason.is.null,needs_review_reason.neq.customer_not_found")
         .or(`deferred_at.is.null,deferred_at.lte.${deferredCutoff}`)
         .order("created_at", { ascending: false });
 
