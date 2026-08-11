@@ -108,10 +108,17 @@ export async function matchPaymentEmail(
         textBody: input.textBody,
     });
 
+    // paymentDate is deliberately NOT part of this gate: it plays no
+    // role in identifying or validating the invoice (findExistingInvoice
+    // matches on customer_id + invoice_number only), so a missing
+    // paymentDate must never block invoice resolution. It is checked
+    // separately below, after the invoice has been resolved and
+    // validated, so a "ready" result always has a real paymentDate
+    // while a "needs_review" result for a missing date still carries
+    // the correctly resolved invoiceId.
     if (
         extracted.amount == null ||
         extracted.currency == null ||
-        extracted.paymentDate == null ||
         extracted.invoiceNumber == null
     ) {
         return needsReview(
@@ -188,8 +195,21 @@ export async function matchPaymentEmail(
         );
     }
 
-    // Explicit extracted date only — never receivedAt. A missing
-    // paymentDate was already rejected above as payment_facts_incomplete.
+    // Checked here, not in the upfront gate: the invoice is already
+    // resolved and validated at this point, so a missing paymentDate
+    // still reports back the correct invoiceId/amount/currency for
+    // review instead of an unlinked proposal.
+    if (extracted.paymentDate == null) {
+        return needsReview(
+            "payment_facts_incomplete",
+            normalizedFromEmail,
+            customer.id,
+            invoice.id,
+            extracted
+        );
+    }
+
+    // Explicit extracted date only — never receivedAt.
     const paymentDate = new Date(extracted.paymentDate);
 
     return {
