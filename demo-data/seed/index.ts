@@ -11,6 +11,7 @@ import { generateReminders } from "../generator/reminders";
 import { seedReminders } from "./reminders";
 import { seedActivities } from "./activities";
 import { reconcileInvoices } from "./reconcileInvoices";
+import { seedCustomerInsights } from "./customerInsights";
 
 import { cleanupDatabase } from "./cleanup";
 
@@ -68,6 +69,10 @@ await seedActivities(
   reminders,
   customerIdMap,
   invoiceIdMap
+);
+
+await seedCustomerInsights(
+  Array.from(customerIdMap.values())
 );
 
 
