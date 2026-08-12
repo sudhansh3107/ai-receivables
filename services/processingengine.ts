@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { getInvoiceFile, linkInvoiceToFile, updateProcessingStatus } from "./invoiceFileService";
 import { extractInvoice } from "./server/invoiceExtractionService";
 import { findOrCreateCustomer } from "./server/customerService";
@@ -93,14 +94,27 @@ export async function processInvoice(invoiceFileId: string) {
         console.log("📄 Invoice");
         console.log(invoice);
 
-        console.log("🧠 Refreshing Customer Insights...");
+        console.log("🧠 Customer Insights Refresh Scheduled (background)");
 
-await refreshCustomerInsights(
-    customer.id
-    
-);
+// Deferred via after() so the invoice-processing response is not
+// blocked on the AI summary call — runs after the response is sent,
+// but still within the serverless invocation's extended lifetime
+// (Next's after() uses the platform's waitUntil under the hood, so
+// it survives on Vercel, unlike a bare unawaited promise).
+after(async () => {
+    try {
+        await refreshCustomerInsights(
+            customer.id
+        );
 
-console.log("🧠 Customer Insights Updated");
+        console.log("🧠 Customer Insights Updated (background)");
+    } catch (error) {
+        console.error(
+            "❌ Background Customer Insights Refresh Failed"
+        );
+        console.error(error);
+    }
+});
 
 
         await logInvoiceActivity(

@@ -1228,6 +1228,58 @@ export async function upsertCustomerInsights(
     return data;
 }
 
+export interface CustomerMissingInsight {
+    id: string;
+    companyName: string;
+}
+
+interface CustomerWithInsightRelation {
+    id: string;
+    company_name: string;
+    customer_insights: { id: string }[] | null;
+}
+
+// Customers with no customer_insights row at all — never initialized.
+// customer_insights.customer_id is UNIQUE, so "row exists" is a
+// reliable, schema-free signal for "already processed"; no new
+// column needed. Supabase/PostgREST has no direct anti-join, so we
+// fetch each customer's insight relation (empty array when none) and
+// filter client-side, then cap to `limit` — acceptable at this
+// project's data volume.
+export async function getCustomersMissingInsights(
+    limit = 25
+): Promise<CustomerMissingInsight[]> {
+    const { data, error } = await supabase
+        .from("customers")
+        .select(
+            `
+            id,
+            company_name,
+            customer_insights (
+                id
+            )
+        `
+        );
+
+    if (error) {
+        throw error;
+    }
+
+    const rows = (data ?? []) as unknown as CustomerWithInsightRelation[];
+
+    return rows
+        .filter(
+            (row) =>
+                !row.customer_insights ||
+                row.customer_insights.length === 0
+        )
+        .slice(0, limit)
+        .map((row) => ({
+            id: row.id,
+            companyName: row.company_name,
+        }));
+}
+
 export interface LatestCustomerInsight {
     customerId: string;
     customerName: string;
