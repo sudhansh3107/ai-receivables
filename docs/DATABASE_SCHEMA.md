@@ -97,6 +97,23 @@ CREATE TABLE public.customer_insights (
   CONSTRAINT customer_insights_pkey PRIMARY KEY (id),
   CONSTRAINT customer_insights_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id)
 );
+CREATE TABLE public.customer_receivables_assessments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  customer_id uuid NOT NULL UNIQUE,
+  assessment text NOT NULL CHECK (assessment = ANY (ARRAY['no_immediate_attention'::text, 'monitor'::text, 'needs_attention'::text, 'critical'::text])),
+  priority text NOT NULL CHECK (priority = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text])),
+  severity text NOT NULL CHECK (severity = ANY (ARRAY['none'::text, 'low'::text, 'elevated'::text])),
+  deviation text NOT NULL CHECK (deviation = ANY (ARRAY['not_applicable'::text, 'unknown'::text, 'within_pattern'::text, 'moderate'::text, 'severe'::text])),
+  terms_breach boolean NOT NULL DEFAULT false,
+  matrix_row smallint NOT NULL CHECK (matrix_row >= 1 AND matrix_row <= 14),
+  reason text NOT NULL,
+  evidence jsonb NOT NULL,
+  assessed_at timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT customer_receivables_assessments_pkey PRIMARY KEY (id),
+  CONSTRAINT customer_receivables_assessments_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id)
+);
 CREATE TABLE public.reminders (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   invoice_id uuid NOT NULL,
@@ -134,7 +151,7 @@ CREATE TABLE public.activity_log (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   invoice_id uuid,
   customer_id uuid,
-  activity_type text NOT NULL CHECK (activity_type = ANY (ARRAY['invoice_created'::text, 'invoice_validated'::text, 'invoice_uploaded'::text, 'invoice_confidence_calculated'::text, 'customer_created'::text, 'customer_matched'::text, 'reminder_scheduled'::text, 'reminder_sent'::text, 'payment_recorded'::text, 'invoice_paid'::text, 'invoice_partially_paid'::text, 'invoice_overdue'::text, 'customer_insights_updated'::text, 'payment_decision_approved'::text, 'payment_decision_executed'::text, 'payment_decision_execution_failed'::text])),
+  activity_type text NOT NULL CHECK (activity_type = ANY (ARRAY['invoice_created'::text, 'invoice_validated'::text, 'invoice_uploaded'::text, 'invoice_confidence_calculated'::text, 'customer_created'::text, 'customer_matched'::text, 'reminder_scheduled'::text, 'reminder_sent'::text, 'payment_recorded'::text, 'invoice_paid'::text, 'invoice_partially_paid'::text, 'invoice_overdue'::text, 'customer_insights_updated'::text, 'payment_decision_approved'::text, 'payment_decision_executed'::text, 'payment_decision_execution_failed'::text, 'payment_proof_requested'::text, 'payment_decision_resolved'::text, 'payment_decision_deferred'::text, 'payment_decision_wait_completed'::text, 'receivables_assessment_updated'::text])),
   description text NOT NULL,
   metadata jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),

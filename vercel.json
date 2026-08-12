@@ -7,6 +7,10 @@
     {
       "path": "/api/customer-insights/backfill",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/receivables-assessments/backfill",
+      "schedule": "30 0 * * *"
     }
   ]
 }

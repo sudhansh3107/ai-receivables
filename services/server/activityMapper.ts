@@ -368,6 +368,36 @@ export function mapActivityLog(
         status: "Completed",
     };
 
+    case ActivityTypes.RECEIVABLES_ASSESSMENT_UPDATED: {
+
+        const assessmentTitles: Record<string, string> = {
+            no_immediate_attention: "No immediate attention needed",
+            monitor: "Monitoring",
+            needs_attention: "Needs attention",
+            critical: "Critical",
+        };
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon:
+                activity.metadata?.assessment === "critical" ||
+                activity.metadata?.assessment === "needs_attention"
+                    ? "warning"
+                    : "document",
+
+            title: `${
+                assessmentTitles[activity.metadata?.assessment] ??
+                "Receivables reviewed"
+            } — ${activity.customers?.company_name ?? "Customer"}`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+    }
+
     default:
 
         return {

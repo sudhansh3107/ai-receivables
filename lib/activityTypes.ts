@@ -64,6 +64,14 @@ export const ActivityTypes = {
     // relationship; resolution is invoice-level, not payment-level.
     PAYMENT_DECISION_RESOLVED: "payment_decision_resolved",
 
+    // Responsibility #2 (Monitor Outstanding Receivables) — the employee
+    // (re-)assessed a customer's outstanding receivables using the
+    // approved deterministic decision matrix. See
+    // services/server/receivablesMonitoringService.ts::
+    // refreshReceivablesAssessment(). Logged every time that function
+    // runs, same cadence convention as CUSTOMER_INSIGHTS_UPDATED.
+    RECEIVABLES_ASSESSMENT_UPDATED: "receivables_assessment_updated",
+
 } as const;
 
 export type ActivityType =

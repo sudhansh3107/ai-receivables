@@ -8,6 +8,7 @@ import {
     refreshCustomerInsights,
 } from "./customerInsightService";
 import { resolvePaymentDecisionsForSettledInvoice } from "./paymentDecisionService";
+import { refreshReceivablesAssessment } from "./receivablesMonitoringService";
 
 
 export interface RecordPaymentInput {
@@ -277,6 +278,27 @@ await refreshCustomerInsights(
 );
 
 console.log("🧠 Customer Insights Updated");
+
+// Responsibility #2 (Monitor Outstanding Receivables). Runs after the
+// customer-insights refresh above, reading that row rather than
+// recomputing it. Isolated in its own try/catch — same shape as the
+// after() block in processingengine.ts — so a failure here can never
+// make recordPayment() throw and cause a successfully recorded payment
+// to be reported back to the caller as a failure.
+console.log("📊 Refreshing Receivables Assessment...");
+
+try {
+    await refreshReceivablesAssessment(
+        input.customerId
+    );
+
+    console.log("📊 Receivables Assessment Updated");
+} catch (error) {
+    console.error(
+        "❌ Receivables Assessment Refresh Failed"
+    );
+    console.error(error);
+}
 
 return payment;
 }

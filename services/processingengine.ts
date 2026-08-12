@@ -13,6 +13,7 @@ import { ReminderStages } from "@/lib/reminderStages";
 import {
     refreshCustomerInsights,
 } from "./server/customerInsightService";
+import { refreshReceivablesAssessment } from "./server/receivablesMonitoringService";
 
 export async function processInvoice(invoiceFileId: string) {
 
@@ -111,6 +112,26 @@ after(async () => {
     } catch (error) {
         console.error(
             "❌ Background Customer Insights Refresh Failed"
+        );
+        console.error(error);
+    }
+
+    // Responsibility #2 (Monitor Outstanding Receivables). Runs after
+    // the customer-insights refresh above, in the same deferred task,
+    // since it reads that row rather than recomputing it. If
+    // customer_insights isn't there (e.g. the refresh above just
+    // failed for a brand-new customer), refreshReceivablesAssessment()
+    // no-ops rather than erroring — the next background/backfill pass
+    // picks it up once insights exist.
+    try {
+        await refreshReceivablesAssessment(
+            customer.id
+        );
+
+        console.log("📊 Receivables Assessment Updated (background)");
+    } catch (error) {
+        console.error(
+            "❌ Background Receivables Assessment Refresh Failed"
         );
         console.error(error);
     }
