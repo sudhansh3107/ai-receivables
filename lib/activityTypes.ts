@@ -72,6 +72,23 @@ export const ActivityTypes = {
     // runs, same cadence convention as CUSTOMER_INSIGHTS_UPDATED.
     RECEIVABLES_ASSESSMENT_UPDATED: "receivables_assessment_updated",
 
+    // Responsibility #3 (Collections & Follow-Up). See
+    // services/server/collectionCaseOrchestrationService.ts and
+    // services/server/collectionDecisionEngine.ts for exactly when each
+    // fires — every value here maps 1:1 to a transition in the approved
+    // v2 state machine / canonical escalation gate.
+    COLLECTION_CASE_OPENED: "collection_case_opened",
+    COLLECTION_OUTREACH_SENT: "collection_outreach_sent",
+    COLLECTION_PROMISE_ACKNOWLEDGED: "collection_promise_acknowledged",
+    COLLECTION_PROMISE_RECORDED: "collection_promise_recorded",
+    COLLECTION_PROMISE_BROKEN: "collection_promise_broken",
+    COLLECTION_DISPUTE_OPENED: "collection_dispute_opened",
+    COLLECTION_BLOCKER_OPENED: "collection_blocker_opened",
+    COLLECTION_EXCEPTION_RESOLVED: "collection_exception_resolved",
+    COLLECTION_CASE_ESCALATED: "collection_case_escalated",
+    COLLECTION_CASE_RESOLVED: "collection_case_resolved",
+    COLLECTION_CASE_RESUMED_BY_HUMAN: "collection_case_resumed_by_human",
+
 } as const;
 
 export type ActivityType =

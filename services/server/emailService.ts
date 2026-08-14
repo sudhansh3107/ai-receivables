@@ -41,7 +41,9 @@ export async function upsertEmailFromGmail(
 export async function getUnclassifiedEmails(limit: number) {
     const { data, error } = await supabase
         .from("emails")
-        .select("id, subject, text_body, from_email, received_at")
+        .select(
+            "id, subject, text_body, from_email, received_at, gmail_message_id, gmail_thread_id"
+        )
         .eq("processing_status", "received")
         .order("received_at", { ascending: true })
         .limit(limit);
@@ -96,6 +98,25 @@ export async function markEmailIgnored(emailId: string) {
         .from("emails")
         .update({
             processing_status: "ignored",
+            updated_at: new Date().toISOString(),
+        })
+        .eq("id", emailId);
+
+    if (error) throw error;
+}
+
+// Responsibility #3 (Collections & Follow-Up) — deterministic sender
+// attribution, written once classification has resolved a customer via
+// customerService.ts::findCustomerByEmailSafe(). Additive only: this
+// column is nullable and no existing reader of `emails` depends on it.
+export async function attributeEmailToCustomer(
+    emailId: string,
+    customerId: string
+): Promise<void> {
+    const { error } = await supabase
+        .from("emails")
+        .update({
+            customer_id: customerId,
             updated_at: new Date().toISOString(),
         })
         .eq("id", emailId);

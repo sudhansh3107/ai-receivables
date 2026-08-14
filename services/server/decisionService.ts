@@ -15,6 +15,11 @@ import {
     PendingPaymentDecision,
 } from "./paymentDecisionService";
 
+import {
+    getEscalatedCollectionCases,
+    EscalatedCollectionCase,
+} from "./collectionCaseService";
+
 import { PAYMENT_DECISION_REVIEW_REASON_LABELS } from "@/lib/paymentDecisionReviewReasons";
 
 // An overdue invoice needing follow-up is represented by its reminder
@@ -23,11 +28,16 @@ import { PAYMENT_DECISION_REVIEW_REASON_LABELS } from "@/lib/paymentDecisionRevi
 // item — low_confidence/payment_follow_up remain the only two
 // countable review/follow-up types. payment_decision is a distinct
 // third kind: a proposed money-moving action awaiting human approval,
-// not a routine review/follow-up task.
+// not a routine review/follow-up task. collection_escalation
+// (Responsibility #3) is a fourth, distinct kind: a collection case the
+// employee could not safely continue autonomously — see
+// services/server/collectionDecisionEngine.ts's canonical escalation
+// gate for exactly when this fires.
 export type DecisionKind =
     | "low_confidence"
     | "payment_follow_up"
-    | "payment_decision";
+    | "payment_decision"
+    | "collection_escalation";
 
 export interface DecisionCandidate {
     id: string;
@@ -137,13 +147,20 @@ async function getRiskRankByCustomer(
 // fields dominate later ones). Every value is oriented so a SMALLER
 // number sorts first (= higher priority):
 //
-//   1. kindTier        0 = payment decision, 1 = overdue follow-up,
-//                      2 = due-today follow-up, 3 = low-confidence
-//                      review. A pending payment decision represents
-//                      money that has already arrived and only needs
-//                      a human nod — it outranks both follow-up
-//                      (unresolved, but not yet in hand) and review
-//                      (no cash impact at all).
+//   1. kindTier        0 = payment decision, 1 = collection escalation,
+//                      2 = overdue follow-up, 3 = due-today follow-up,
+//                      4 = low-confidence review. A pending payment
+//                      decision represents money that has already
+//                      arrived and only needs a human nod — it
+//                      outranks everything else. A collection
+//                      escalation represents accumulated evidence that
+//                      the employee could not safely continue
+//                      autonomously — more urgent than a routine
+//                      unactioned reminder, but a customer's claimed
+//                      payment still ranks above it. (Renumbered from
+//                      the original 0/1/2/3 scheme when
+//                      collection_escalation was introduced —
+//                      Responsibility #3.)
 //   2. -daysOverdue     more overdue sorts first (0 for review/
 //                       payment-decision items)
 //   3. -amountAtRisk    balance_due (follow-up) / invoice_amount
@@ -184,7 +201,7 @@ function buildLowConfidenceCandidates(
             reasons: invoice.confidenceReasons,
         },
         tuple: [
-            3,
+            4,
             0,
             -invoice.amount,
             riskByCustomer.get(invoice.customerId) ?? NEUTRAL_RISK_RANK,
@@ -219,7 +236,7 @@ function buildPaymentFollowUpCandidates(
                 reasons: null,
             },
             tuple: [
-                isOverdue ? 1 : 2,
+                isOverdue ? 2 : 3,
                 -overdueDays,
                 -reminder.balanceDue,
                 riskByCustomer.get(reminder.customerId) ?? NEUTRAL_RISK_RANK,
@@ -307,6 +324,64 @@ function buildPaymentDecisionCandidates(
     });
 }
 
+// A collection case the employee escalated because the canonical
+// escalation gate (collectionDecisionEngine.ts::computeEscalationGate())
+// was satisfied — see that file for exactly when. subtitle surfaces the
+// deterministic escalation_reason sentence directly (never raw
+// evidence fields) plus a compact history summary, so a human can act
+// without reconstructing the case from scratch.
+function buildCollectionEscalationCandidates(
+    cases: EscalatedCollectionCase[],
+    riskByCustomer: Map<string, number>
+): RankedCandidate[] {
+    return cases.map((collectionCase) => {
+        const subtitleParts = [
+            `${collectionCase.outreachCount} outreach attempt${
+                collectionCase.outreachCount === 1 ? "" : "s"
+            }`,
+        ];
+
+        if (collectionCase.brokenPromiseCount > 0) {
+            subtitleParts.push(
+                `${collectionCase.brokenPromiseCount} broken promise${
+                    collectionCase.brokenPromiseCount === 1 ? "" : "s"
+                }`
+            );
+        }
+
+        if (collectionCase.exceptionType) {
+            subtitleParts.push(
+                collectionCase.exceptionType.replace(/_/g, " ")
+            );
+        }
+
+        return {
+            candidate: {
+                id: `collection_escalation:${collectionCase.id}`,
+                kind: "collection_escalation",
+                actionId: collectionCase.id,
+                customerName: collectionCase.customerName ?? "Unknown customer",
+                title: "Collection case needs review",
+                subtitle: subtitleParts.join(" · "),
+                reasons: collectionCase.escalationReason
+                    ? [collectionCase.escalationReason]
+                    : null,
+            },
+            tuple: [
+                1,
+                0,
+                0,
+                riskByCustomer.get(collectionCase.customerId) ??
+                    NEUTRAL_RISK_RANK,
+                0,
+                collectionCase.escalatedAt
+                    ? new Date(collectionCase.escalatedAt).getTime()
+                    : 0,
+            ],
+        };
+    });
+}
+
 function compareTuples(a: PriorityTuple, b: PriorityTuple): number {
     for (let i = 0; i < a.length; i++) {
         if (a[i] !== b[i]) return a[i] - b[i];
@@ -332,15 +407,20 @@ function compareTuples(a: PriorityTuple, b: PriorityTuple): number {
 // underlying data/ranking/eligibility rules are identical either way.
 export async function getDecisionQueue(
     topN = 3,
-    includePaymentDecisions = true
+    includePaymentDecisions = true,
+    includeCollectionEscalations = true
 ): Promise<DecisionQueue> {
-    const [invoices, reminders, paymentDecisions] = await Promise.all([
-        getInvoicesNeedingReviewDetails(),
-        getRemindersNeedingAttention(),
-        includePaymentDecisions
-            ? getPendingPaymentDecisions()
-            : Promise.resolve([]),
-    ]);
+    const [invoices, reminders, paymentDecisions, collectionCases] =
+        await Promise.all([
+            getInvoicesNeedingReviewDetails(),
+            getRemindersNeedingAttention(),
+            includePaymentDecisions
+                ? getPendingPaymentDecisions()
+                : Promise.resolve([]),
+            includeCollectionEscalations
+                ? getEscalatedCollectionCases()
+                : Promise.resolve([]),
+        ]);
 
     const riskByCustomer = await getRiskRankByCustomer([
         ...invoices.map((invoice) => invoice.customerId),
@@ -348,12 +428,17 @@ export async function getDecisionQueue(
         ...paymentDecisions
             .map((decision) => decision.customerId)
             .filter((id): id is string => id !== null),
+        ...collectionCases.map((collectionCase) => collectionCase.customerId),
     ]);
 
     const ranked = [
         ...buildLowConfidenceCandidates(invoices, riskByCustomer),
         ...buildPaymentFollowUpCandidates(reminders, riskByCustomer),
         ...buildPaymentDecisionCandidates(paymentDecisions, riskByCustomer),
+        ...buildCollectionEscalationCandidates(
+            collectionCases,
+            riskByCustomer
+        ),
     ].sort((a, b) => compareTuples(a.tuple, b.tuple));
 
     return {

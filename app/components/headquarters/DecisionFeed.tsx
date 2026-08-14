@@ -12,6 +12,7 @@ import {
   FileWarning,
   LucideIcon,
   Send,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,6 +30,10 @@ import {
   deferPaymentDecisionRequest,
   requestPaymentProofRequest,
 } from "@/lib/paymentDecisionActions";
+import {
+  resumeCollectionCaseRequest,
+  deferCollectionCaseRequest,
+} from "@/lib/collectionCaseActions";
 
 const KIND_STYLES: Record<
   DecisionKind,
@@ -57,6 +62,14 @@ const KIND_STYLES: Record<
     icon: Banknote,
     iconColor: tokens.status.info.text,
     iconBackground: tokens.status.info.background,
+  },
+  // Responsibility #3 (Collections & Follow-Up) — uses hoverActions
+  // (Resume / Keep monitoring / Review) rather than the single
+  // always-visible action button, same as payment_decision.
+  collection_escalation: {
+    icon: ShieldAlert,
+    iconColor: tokens.status.pending.text,
+    iconBackground: tokens.status.pending.background,
   },
 };
 
@@ -154,6 +167,56 @@ export default function DecisionFeed() {
     }
   }
 
+  // Resume outreach — collection_escalation only. Returns the case to
+  // autonomous handling (services/server/collectionCaseService.ts::
+  // resumeCollectionCaseFromEscalation()).
+  async function handleResumeCollectionCase(
+    candidateId: string,
+    caseId: string
+  ) {
+    setPendingId(candidateId);
+
+    try {
+      await resumeCollectionCaseRequest(caseId);
+      toast.success("Collection case resumed.");
+      await refresh();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Couldn't resume this case. Please try again."
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  // Keep monitoring — not a resolution, only hides the card from the
+  // queue for 24 hours (identical semantics to handleWaitPaymentDecision
+  // above, reused pattern rather than a new interaction concept).
+  async function handleWaitCollectionCase(
+    candidateId: string,
+    caseId: string
+  ) {
+    setPendingId(candidateId);
+
+    try {
+      await deferCollectionCaseRequest(caseId);
+      toast.success("Collection case deferred for 24 hours.");
+      await refresh();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Couldn't defer this case. Please try again."
+      );
+    } finally {
+      setPendingId(null);
+    }
+  }
+
   // All three actions are always shown together as one consistent set.
   // A payment_decision exists because a customer's payment claim
   // couldn't be matched to the ledger — Request Proof is the action for
@@ -165,40 +228,73 @@ export default function DecisionFeed() {
   function buildHoverActions(
     decision: DecisionCandidate
   ): DecisionHoverAction[] | undefined {
-    if (decision.kind !== "payment_decision") {
-      return undefined;
+    if (decision.kind === "payment_decision") {
+      return [
+        {
+          key: "requestProof",
+          label: "Request Proof",
+          icon: Send,
+          tone: "requestProof",
+          pending: pendingId === decision.id,
+          ariaLabel: "Ask the customer for payment proof",
+          onClick: () =>
+            handleRequestProof(decision.id, decision.actionId),
+        },
+        {
+          key: "wait",
+          label: "Wait",
+          icon: Clock,
+          tone: "wait",
+          pending: pendingId === decision.id,
+          ariaLabel: "Defer this decision for later",
+          onClick: () =>
+            handleWaitPaymentDecision(decision.id, decision.actionId),
+        },
+        {
+          key: "review",
+          label: "Review",
+          icon: Eye,
+          tone: "review",
+          href: "/decisions",
+          ariaLabel: "Review this decision's details",
+        },
+      ];
     }
 
-    return [
-      {
-        key: "requestProof",
-        label: "Request Proof",
-        icon: Send,
-        tone: "requestProof",
-        pending: pendingId === decision.id,
-        ariaLabel: "Ask the customer for payment proof",
-        onClick: () =>
-          handleRequestProof(decision.id, decision.actionId),
-      },
-      {
-        key: "wait",
-        label: "Wait",
-        icon: Clock,
-        tone: "wait",
-        pending: pendingId === decision.id,
-        ariaLabel: "Defer this decision for later",
-        onClick: () =>
-          handleWaitPaymentDecision(decision.id, decision.actionId),
-      },
-      {
-        key: "review",
-        label: "Review",
-        icon: Eye,
-        tone: "review",
-        href: "/decisions",
-        ariaLabel: "Review this decision's details",
-      },
-    ];
+    if (decision.kind === "collection_escalation") {
+      return [
+        {
+          key: "resume",
+          label: "Resume",
+          icon: Send,
+          tone: "requestProof",
+          pending: pendingId === decision.id,
+          ariaLabel: "Resume autonomous outreach for this case",
+          onClick: () =>
+            handleResumeCollectionCase(decision.id, decision.actionId),
+        },
+        {
+          key: "wait",
+          label: "Keep monitoring",
+          icon: Clock,
+          tone: "wait",
+          pending: pendingId === decision.id,
+          ariaLabel: "Keep monitoring — hide for 24 hours",
+          onClick: () =>
+            handleWaitCollectionCase(decision.id, decision.actionId),
+        },
+        {
+          key: "review",
+          label: "Review",
+          icon: Eye,
+          tone: "review",
+          href: "/decisions",
+          ariaLabel: "Review this case's details",
+        },
+      ];
+    }
+
+    return undefined;
   }
 
   return (

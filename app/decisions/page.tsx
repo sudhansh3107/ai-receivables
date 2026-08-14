@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Clock3, FileWarning, LucideIcon } from "lucide-react";
+import {
+    ArrowLeft,
+    Clock3,
+    FileWarning,
+    LucideIcon,
+    ShieldAlert,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import AppShell from "../components/layout/AppShell";
@@ -20,13 +26,19 @@ import {
 } from "@/services/server/decisionService";
 import { markInvoiceReviewed } from "@/services/invoiceService";
 import { markReminderActioned } from "@/services/server/reminderService";
+import { resumeCollectionCaseRequest } from "@/lib/collectionCaseActions";
 
 // Every table getDecisionQueue()'s candidates are derived from:
 // low_confidence from invoices, payment_follow_up from reminders, and
 // (were it included here) payment_decision from payment_decisions.
 // Kept as a module-level constant for a stable reference across
 // renders.
-const DECISION_TABLES = ["payment_decisions", "invoices", "reminders"];
+const DECISION_TABLES = [
+    "payment_decisions",
+    "invoices",
+    "reminders",
+    "collection_cases",
+];
 
 // No dashboard cap here — the full currently-actionable, ranked queue,
 // same ranking definitions as the dashboard. Module-level so it's a
@@ -38,8 +50,12 @@ const DECISION_TABLES = ["payment_decisions", "invoices", "reminders"];
 // twice on this one page. Excluding them from this generic list is
 // the "minimal adjustment" the shared getDecisionQueue() model needs;
 // the underlying data/eligibility rules are unchanged.
+//
+// includeCollectionEscalations=true (unlike payment decisions): unlike
+// payment_decision, collection_escalation has no separate dedicated
+// feed component on this page, so it stays in this generic list.
 async function fetchDecisionItems(): Promise<DecisionCandidate[]> {
-    const queue = await getDecisionQueue(Infinity, false);
+    const queue = await getDecisionQueue(Infinity, false, true);
     return queue.items;
 }
 
@@ -73,6 +89,18 @@ const KIND_STYLES: Record<
         iconColor: tokens.status.info.text,
         iconBackground: tokens.status.info.background,
     },
+    // Responsibility #3 (Collections & Follow-Up). Unlike Mission
+    // Control's DecisionFeed (which offers Resume/Wait/Review via
+    // hover), this page's generic list only supports a single
+    // always-visible action — "Resume outreach" is the most common
+    // path back to autonomous handling; Wait/Mark resolved remain
+    // available via the same API routes for a future dedicated view.
+    collection_escalation: {
+        icon: ShieldAlert,
+        iconColor: tokens.status.pending.text,
+        iconBackground: tokens.status.pending.background,
+        actionLabel: "Resume outreach",
+    },
 };
 
 export default function DecisionsPage() {
@@ -97,6 +125,8 @@ export default function DecisionsPage() {
         try {
             if (kind === "low_confidence") {
                 await markInvoiceReviewed(actionId);
+            } else if (kind === "collection_escalation") {
+                await resumeCollectionCaseRequest(actionId);
             } else {
                 await markReminderActioned(actionId);
             }

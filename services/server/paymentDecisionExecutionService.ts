@@ -9,6 +9,7 @@ import {
 import { logActivity } from "./activityLogService";
 import { ActivityTypes } from "@/lib/activityTypes";
 import { PaymentMethod } from "@/lib/paymentMethods";
+import { evaluateOrOpenCollectionCase } from "./collectionCaseOrchestrationService";
 
 // Human approval and system execution for payment_decisions rows
 // created by services/server/paymentDecisionService.ts::
@@ -656,6 +657,29 @@ export async function executePaymentDecision(
                 paymentId: payment.id,
             },
         });
+
+        // Responsibility #3 (Collections & Follow-Up) — deliberately
+        // called here rather than inside recordPayment() itself; see
+        // services/server/paymentService.ts's top-of-file note for why
+        // (this file is already, like this one, only ever imported from
+        // API routes, never from the client-reachable dashboardService.ts
+        // chain, so it's a safe place for this). Isolated in its own
+        // try/catch so a case-evaluation failure can never turn a
+        // successfully executed payment decision into a reported failure.
+        if (executedDecision.customer_id) {
+            try {
+                await evaluateOrOpenCollectionCase(
+                    executedDecision.customer_id,
+                    { triggeredByPayment: true }
+                );
+            } catch (caseError) {
+                console.error(
+                    "Collection Case Evaluation Failed (payment decision execution):",
+                    decisionId,
+                    caseError
+                );
+            }
+        }
 
         return {
             outcome: "executed",

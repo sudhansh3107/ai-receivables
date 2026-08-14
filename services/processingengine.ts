@@ -14,6 +14,7 @@ import {
     refreshCustomerInsights,
 } from "./server/customerInsightService";
 import { refreshReceivablesAssessment } from "./server/receivablesMonitoringService";
+import { evaluateOrOpenCollectionCase } from "./server/collectionCaseOrchestrationService";
 
 export async function processInvoice(invoiceFileId: string) {
 
@@ -132,6 +133,23 @@ after(async () => {
     } catch (error) {
         console.error(
             "❌ Background Receivables Assessment Refresh Failed"
+        );
+        console.error(error);
+    }
+
+    // Responsibility #3 (Collections & Follow-Up). Runs after the
+    // receivables-assessment refresh above, in the same deferred task,
+    // since it reads that row rather than recomputing it. Isolated in
+    // its own try/catch — same shape as the two steps above — so a
+    // failure here can never affect invoice processing, which has
+    // already completed by this point.
+    try {
+        await evaluateOrOpenCollectionCase(customer.id);
+
+        console.log("📋 Collection Case Evaluated (background)");
+    } catch (error) {
+        console.error(
+            "❌ Background Collection Case Evaluation Failed"
         );
         console.error(error);
     }

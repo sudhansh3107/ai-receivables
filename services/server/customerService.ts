@@ -75,6 +75,58 @@ async function findByEmail(email: string) {
     return data;
 }
 
+// Responsibility #3 (Collections & Follow-Up) ONLY — every other caller
+// (findOrCreateCustomer, findCustomerByEmail, findByEmail above) is
+// untouched and keeps its existing throw-on-ambiguity behavior.
+//
+// customers.email has no UNIQUE constraint (only gst_number does), so
+// .maybeSingle() can encounter more than one matching row. Supabase/
+// PostgREST surfaces that as a thrown error (code PGRST116 — "JSON
+// object requested, multiple (or no) rows returned"), not a silent
+// pick of the first row. For collection-case email attribution this is
+// exactly the case that must fail safe rather than guess: an ambiguous
+// sender means "abstain" (§8/§13 of the approved Responsibility #3
+// design — an email only ever affects an EXISTING case for a
+// deterministically-resolved customer, never a guessed one).
+//
+// This function makes that abstain explicit and distinguishable in
+// logs from a genuine database failure: ambiguity is logged as a
+// warning and resolved to null (no case effect, no error thrown to the
+// caller); any other error is rethrown as-is, preserving the exact
+// same isolation/failure-handling behavior every other caller of this
+// service already relies on.
+export async function findCustomerByEmailSafe(
+    email: string
+): Promise<ReturnType<typeof findByEmail>> {
+    const { data, error } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("email", email)
+        .maybeSingle();
+
+    if (error) {
+        const isAmbiguousMatch =
+            error.code === "PGRST116" ||
+            /multiple \(or no\) rows/i.test(error.message ?? "");
+
+        if (isAmbiguousMatch) {
+            console.warn(
+                "Customer Attribution - Ambiguous email match (more than one customer shares this email), abstaining:",
+                email
+            );
+
+            return null;
+        }
+
+        // A genuine database error — preserve existing throw-and-let-the-
+        // caller's-isolation-boundary-handle-it behavior rather than
+        // disguising it as "no customer found."
+        throw error;
+    }
+
+    return data;
+}
+
 async function createCustomer(
     invoice: ExtractedInvoice
 ) {

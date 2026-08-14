@@ -10,6 +10,26 @@ import {
 import { resolvePaymentDecisionsForSettledInvoice } from "./paymentDecisionService";
 import { refreshReceivablesAssessment } from "./receivablesMonitoringService";
 
+// NOTE: the Responsibility #3 (Collections & Follow-Up) hook is
+// deliberately NOT imported/called here, even though this is the
+// natural place it would belong alongside the two steps below. This
+// file's exports (getRecoveredThisMonth/getRecoveredLastMonth) are
+// imported by services/server/dashboardService.ts, which is in turn
+// imported by the client-side app/hooks/useDashboard.tsx hook — so
+// this entire module's import graph is bundled for the browser.
+// collectionCaseOrchestrationService.ts sends email (via
+// lib/gmail/send.ts -> lib/google.ts -> googleapis, which needs
+// Node-only tls/net/fs), and pulling that into this file breaks the
+// client build. The existing codebase already avoids this: everything
+// that sends Gmail (paymentProofRequestService.ts,
+// paymentDecisionExecutionService.ts) is only ever imported from API
+// routes, never from a file reachable from dashboardService.ts. The
+// same convention is followed here — see the evaluateOrOpenCollectionCase()
+// call in app/api/payments/route.ts and
+// paymentDecisionExecutionService.ts::executePaymentDecision() instead,
+// both of which call recordPayment() below and are the ONLY two
+// callers of it.
+
 
 export interface RecordPaymentInput {
     invoiceId: string;
@@ -299,6 +319,15 @@ try {
     );
     console.error(error);
 }
+
+// Responsibility #3 (Collections & Follow-Up) is intentionally NOT
+// triggered here — see this file's top-of-file note for why. Both
+// callers of recordPayment() (app/api/payments/route.ts and
+// paymentDecisionExecutionService.ts::executePaymentDecision()) invoke
+// evaluateOrOpenCollectionCase(customerId, { triggeredByPayment: true })
+// themselves immediately after a successful call, in their own
+// try/catch, so a case-evaluation failure still can never affect the
+// payment result.
 
 return payment;
 }

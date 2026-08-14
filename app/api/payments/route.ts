@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordPayment } from "@/services/server/paymentService";
+import { evaluateOrOpenCollectionCase } from "@/services/server/collectionCaseOrchestrationService";
 
 export async function POST(request: NextRequest) {
     try {
@@ -19,6 +20,23 @@ export async function POST(request: NextRequest) {
 
             notes: body.notes,
         });
+
+        // Responsibility #3 (Collections & Follow-Up) — deliberately
+        // called here (an API route, server-only) rather than inside
+        // recordPayment() itself; see services/server/paymentService.ts's
+        // top-of-file note for why. Isolated in its own try/catch so a
+        // case-evaluation failure can never turn a successfully recorded
+        // payment into a reported failure.
+        try {
+            await evaluateOrOpenCollectionCase(body.customerId, {
+                triggeredByPayment: true,
+            });
+        } catch (error) {
+            console.error(
+                "Collection Case Evaluation Failed (payment API):",
+                error
+            );
+        }
 
         return NextResponse.json({
             success: true,

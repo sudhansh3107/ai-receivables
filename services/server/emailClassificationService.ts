@@ -64,6 +64,13 @@ Rules:
 - confidence must be a number between 0 and 1 reflecting how certain
   you are in the classification.
 - Base the classification only on the subject and body provided.
+- dispute vs payment_blocker: use "dispute" only when the customer is
+  contesting the debt itself (the invoice is wrong, amount is disputed,
+  goods/services were not received). Use "payment_blocker" when the
+  customer is NOT contesting the debt but is internally stuck on
+  paying it (waiting on a PO, internal approval, documentation, vendor
+  onboarding, or a tax/compliance step). If genuinely unclear which of
+  the two applies, prefer "dispute" (the more conservative category).
 
 Subject:
 ${input.subject ?? "(no subject)"}

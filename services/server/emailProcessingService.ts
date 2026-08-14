@@ -13,6 +13,21 @@ import {
     logInvoiceActivity,
 } from "@/services/server/activityLogService";
 import { ActivityTypes } from "@/lib/activityTypes";
+import { handleCollectionRelevantEmail } from "@/services/server/collectionCaseOrchestrationService";
+
+// Responsibility #3 (Collections & Follow-Up) classifications — every
+// value here except payment_received (owned entirely by the existing
+// pipeline above) and other/irrelevant (no case effect at all, per the
+// approved design). Kept local to this file since it is purely a
+// dispatch list, not a shared type.
+const COLLECTION_RELEVANT_CLASSIFICATIONS = new Set([
+    "payment_promise",
+    "dispute",
+    "payment_blocker",
+    "reminder_response",
+    "customer_inquiry",
+    "invoice_related",
+]);
 
 const DEFAULT_BATCH_SIZE = 10;
 
@@ -176,6 +191,37 @@ export async function processUnclassifiedEmails(
                         email.id,
                         paymentError
                     );
+                }
+            } else if (
+                COLLECTION_RELEVANT_CLASSIFICATIONS.has(result.classification)
+            ) {
+                // Responsibility #3 (Collections & Follow-Up) side
+                // effect — isolated exactly like the payment_received
+                // branch above: classification has already succeeded
+                // and been persisted, so a failure here must never roll
+                // it back or mark the email failed. Requires
+                // gmail_message_id/gmail_thread_id (present on every
+                // Gmail-sourced row) to reply in-thread for
+                // acknowledgment-type decisions.
+                if (email.gmail_message_id && email.gmail_thread_id) {
+                    try {
+                        await handleCollectionRelevantEmail({
+                            id: email.id,
+                            subject: email.subject,
+                            text_body: email.text_body,
+                            from_email: email.from_email,
+                            classification: result.classification,
+                            classification_confidence: result.confidence,
+                            gmail_message_id: email.gmail_message_id,
+                            gmail_thread_id: email.gmail_thread_id,
+                        });
+                    } catch (collectionError) {
+                        console.error(
+                            "Collection Case Handling - Failed for email:",
+                            email.id,
+                            collectionError
+                        );
+                    }
                 }
             }
         } catch (error) {
