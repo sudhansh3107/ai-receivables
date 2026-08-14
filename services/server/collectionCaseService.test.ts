@@ -9,6 +9,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 // about exercising Postgres itself.
 function createSupabaseMock() {
     const queue: { data: unknown; error: unknown }[] = [];
+    let lastUpdateArg: Record<string, unknown> | null = null;
 
     const builder: Record<string, unknown> = {};
     const chainMethod = () => builder;
@@ -17,7 +18,10 @@ function createSupabaseMock() {
         from: chainMethod,
         select: chainMethod,
         insert: chainMethod,
-        update: chainMethod,
+        update: (arg: Record<string, unknown>) => {
+            lastUpdateArg = arg;
+            return builder;
+        },
         eq: chainMethod,
         neq: chainMethod,
         in: chainMethod,
@@ -41,6 +45,9 @@ function createSupabaseMock() {
         client: { from: () => builder } as unknown,
         queueResponse(response: { data: unknown; error: unknown }) {
             queue.push(response);
+        },
+        getLastUpdateArg() {
+            return lastUpdateArg;
         },
     };
 }
@@ -107,7 +114,7 @@ describe("openCollectionCase — idempotency", () => {
     });
 });
 
-describe("claimCaseForEvaluation — concurrency guard", () => {
+describe("claimCaseForEvaluation — optimistic-lock compare-and-swap", () => {
     beforeEach(() => {
         vi.restoreAllMocks();
     });
@@ -122,22 +129,92 @@ describe("claimCaseForEvaluation — concurrency guard", () => {
             error: null,
         });
 
-        const result = await claimCaseForEvaluation("case-1");
+        const result = await claimCaseForEvaluation(
+            "case-1",
+            new Date("2026-08-14T09:00:00Z")
+        );
 
         expect(result).not.toBeNull();
         expect(result?.id).toBe("case-1");
     });
 
-    it("returns null when the case was already claimed by a concurrent evaluation pass (zero rows matched)", async () => {
+    // Regression test for the "early customer reply silently dropped"
+    // bug: claiming must succeed for a case whose next_evaluation_at is
+    // still in the FUTURE (not yet due), as long as the caller's
+    // expected value matches the row's actual current value — the claim
+    // must never require next_evaluation_at <= now. That "due" check
+    // belongs to the caller (getCasesDueForEvaluation()'s own WHERE
+    // clause for the scheduled sweep), not to this compare-and-swap.
+    it("claims a case whose next_evaluation_at is still in the future, given a matching expected value (event-triggered early claim)", async () => {
+        const { claimCaseForEvaluation } = await import(
+            "./collectionCaseService"
+        );
+
+        const future = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
+
+        supabaseMock.queueResponse({
+            data: { id: "case-1", status: "awaiting_response" },
+            error: null,
+        });
+
+        const result = await claimCaseForEvaluation("case-1", future);
+
+        expect(result).not.toBeNull();
+        expect(result?.id).toBe("case-1");
+    });
+
+    it("returns null when the case was already claimed by a concurrent evaluation pass (zero rows matched — expected value no longer matches)", async () => {
         const { claimCaseForEvaluation } = await import(
             "./collectionCaseService"
         );
 
         supabaseMock.queueResponse({ data: null, error: null });
 
-        const result = await claimCaseForEvaluation("case-1");
+        const result = await claimCaseForEvaluation(
+            "case-1",
+            new Date("2026-08-14T09:00:00Z")
+        );
 
         expect(result).toBeNull();
+    });
+
+    // Two callers race to evaluate the SAME case at the same
+    // next_evaluation_at snapshot (e.g. the scheduled sweep and an
+    // inbound reply arriving in the same instant). Only the first
+    // caller's conditional UPDATE can match the row's still-original
+    // value; by the time the second caller's UPDATE runs, the first
+    // already moved next_evaluation_at to its lock timestamp, so the
+    // second's `.eq(expected)` no longer matches — exactly what a real
+    // concurrent Postgres UPDATE ... WHERE would enforce.
+    it("only one of two concurrent callers claiming the same expected value succeeds", async () => {
+        const { claimCaseForEvaluation } = await import(
+            "./collectionCaseService"
+        );
+
+        const expected = new Date("2026-08-14T09:00:00Z");
+
+        // First caller's UPDATE finds a matching row.
+        supabaseMock.queueResponse({
+            data: { id: "case-1", status: "awaiting_response" },
+            error: null,
+        });
+
+        // Second caller's UPDATE, against the same expected value, now
+        // finds zero rows (the row's real next_evaluation_at was
+        // already moved by the first claim).
+        supabaseMock.queueResponse({ data: null, error: null });
+
+        const [first, second] = await Promise.all([
+            claimCaseForEvaluation("case-1", expected),
+            claimCaseForEvaluation("case-1", expected),
+        ]);
+
+        const results = [first, second];
+        const successes = results.filter((r) => r !== null);
+        const failures = results.filter((r) => r === null);
+
+        expect(successes).toHaveLength(1);
+        expect(failures).toHaveLength(1);
     });
 });
 
@@ -235,5 +312,100 @@ describe("deferCollectionCaseEscalation — 'keep monitoring'", () => {
         const result = await deferCollectionCaseEscalation("case-1");
 
         expect(result.outcome).toBe("already_deferred");
+    });
+});
+
+describe("applyCaseTransition — outbound thread anchor persistence", () => {
+    beforeEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it("omits last_outbound_gmail_message_id/thread_id when no outboundThread patch is given (wait/escalate/resolve — no send happened)", async () => {
+        const { applyCaseTransition } = await import("./collectionCaseService");
+
+        supabaseMock.queueResponse({
+            data: { id: "case-1", status: "escalated" },
+            error: null,
+        });
+
+        await applyCaseTransition("case-1", "unresponsive", {
+            status: "escalated",
+            lastDecision: "escalate",
+            lastDecisionReason: "test",
+            lastDecisionAt: new Date(),
+            nextEvaluationAt: new Date(),
+        });
+
+        const updateArg = supabaseMock.getLastUpdateArg();
+
+        expect(updateArg).not.toBeNull();
+        expect(updateArg).not.toHaveProperty("last_outbound_gmail_message_id");
+        expect(updateArg).not.toHaveProperty("last_outbound_gmail_thread_id");
+    });
+
+    it("writes the outbound thread anchor in the SAME update as the decision field patch when a send succeeded", async () => {
+        const { applyCaseTransition } = await import("./collectionCaseService");
+
+        supabaseMock.queueResponse({
+            data: { id: "case-1", status: "awaiting_response" },
+            error: null,
+        });
+
+        await applyCaseTransition(
+            "case-1",
+            "open",
+            {
+                status: "awaiting_response",
+                lastDecision: "contact",
+                lastDecisionReason: "test",
+                lastDecisionAt: new Date(),
+                nextEvaluationAt: new Date(),
+            },
+            {
+                lastOutboundGmailMessageId: "gmail-msg-1",
+                lastOutboundGmailThreadId: "gmail-thread-1",
+            }
+        );
+
+        const updateArg = supabaseMock.getLastUpdateArg();
+
+        expect(updateArg).toMatchObject({
+            last_outbound_gmail_message_id: "gmail-msg-1",
+            last_outbound_gmail_thread_id: "gmail-thread-1",
+            // Same object as the decision fields — proves this is one
+            // atomic UPDATE, not a second write.
+            status: "awaiting_response",
+            last_decision: "contact",
+        });
+    });
+
+    it("persists a null thread id (a fresh, un-threaded send) without dropping the message id", async () => {
+        const { applyCaseTransition } = await import("./collectionCaseService");
+
+        supabaseMock.queueResponse({
+            data: { id: "case-1", status: "awaiting_response" },
+            error: null,
+        });
+
+        await applyCaseTransition(
+            "case-1",
+            "open",
+            {
+                status: "awaiting_response",
+                lastDecision: "contact",
+                lastDecisionReason: "test",
+                lastDecisionAt: new Date(),
+                nextEvaluationAt: new Date(),
+            },
+            {
+                lastOutboundGmailMessageId: "gmail-msg-1",
+                lastOutboundGmailThreadId: null,
+            }
+        );
+
+        const updateArg = supabaseMock.getLastUpdateArg();
+
+        expect(updateArg?.last_outbound_gmail_message_id).toBe("gmail-msg-1");
+        expect(updateArg?.last_outbound_gmail_thread_id).toBeNull();
     });
 });

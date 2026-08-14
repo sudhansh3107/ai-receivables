@@ -398,6 +398,176 @@ export function mapActivityLog(
         };
     }
 
+    case ActivityTypes.COLLECTION_CASE_OPENED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "warning",
+
+            title: `Collection case opened — ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
+    case ActivityTypes.COLLECTION_OUTREACH_SENT:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "mail",
+
+            title: `Outreach sent to ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
+    case ActivityTypes.COLLECTION_PROMISE_ACKNOWLEDGED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "handshake",
+
+            title: `Payment promise acknowledged — ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
+    case ActivityTypes.COLLECTION_PROMISE_BROKEN:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "warning",
+
+            title: `Promise missed — ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
+    case ActivityTypes.COLLECTION_DISPUTE_OPENED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "warning",
+
+            title: `Dispute raised — ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
+    case ActivityTypes.COLLECTION_BLOCKER_OPENED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "warning",
+
+            title: `Blocker reported — ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Waiting",
+        };
+
+    case ActivityTypes.COLLECTION_EXCEPTION_RESOLVED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "handshake",
+
+            title: `Exception resolved — ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
+    case ActivityTypes.COLLECTION_CASE_ESCALATED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "warning",
+
+            title: `Collection case escalated — ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Waiting",
+        };
+
+    case ActivityTypes.COLLECTION_CASE_RESOLVED:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "handshake",
+
+            title: `Collection case resolved — ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
+    case ActivityTypes.COLLECTION_CASE_RESUMED_BY_HUMAN:
+
+        return {
+            id: activity.id,
+            time: formatTime(activity.created_at),
+
+            icon: "handshake",
+
+            title: `Collection case resumed — ${
+                activity.customers?.company_name ?? "Customer"
+            }`,
+
+            subtitle: activity.description,
+
+            status: "Completed",
+        };
+
     default:
 
         return {

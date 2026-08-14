@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { sendGmailReply } from "@/lib/gmail/send";
 import { getOriginalMessageMetadata } from "@/lib/gmail/messages";
-import { ActivityTypes } from "@/lib/activityTypes";
+import { ActivityTypes, type ActivityType } from "@/lib/activityTypes";
 import { logActivity } from "./activityLogService";
 import { logEmployeeActivity } from "../EmployeeActivityService";
 import { getOverdueInvoiceDetail } from "./receivablesMonitoringService";
@@ -25,10 +25,14 @@ import {
     applyCaseTransition,
     resolveCollectionCase,
     toCaseState,
+    type OutboundThreadPatch,
+    type CollectionCaseRow,
 } from "./collectionCaseService";
 import {
     evaluateCollectionCase,
     type AssessmentContext,
+    type CaseStatus,
+    type CollectionDecisionResult,
     type InsightContext,
     type LatestResponse,
     type LatestResponseClassification,
@@ -193,11 +197,50 @@ export interface EvaluateOrOpenOptions {
 // paymentProofRequestService.ts's exact RFC Message-ID threading.
 // -----------------------------------------------------------------
 
-async function sendProactiveOutreach(
+export interface OutboundThreadAnchor {
+    messageId: string;
+    threadId: string | null;
+}
+
+// Threads onto the case's own last outbound message when one exists
+// (`anchor` — collection_cases.last_outbound_gmail_message_id/
+// last_outbound_gmail_thread_id, resolved by the caller), otherwise
+// sends a fresh email exactly as before (a case's first-ever `contact`
+// always has no anchor). Unlike sendReplyOutreach() below — which MUST
+// reply to a specific inbound email and therefore throws when its RFC
+// Message-ID is unavailable — a missing/unreadable header here only
+// degrades this one send back to a fresh thread rather than blocking
+// the outreach itself: continuing the existing thread is a continuity
+// improvement, not the load-bearing part of this responsibility (the
+// send is). A genuine failure to fetch the anchor message at all (vs.
+// the header being merely absent) still propagates, exactly like every
+// other failure in executeOutreach() — caught by the outer try/catch in
+// evaluateOrOpenCollectionCase, case state left unchanged, retried later.
+// Exported for direct unit testing of the anchor-present vs.
+// anchor-absent branches without mocking the full evaluation loop.
+export async function sendProactiveOutreach(
     to: string,
-    composed: { subject: string; body: string }
+    composed: { subject: string; body: string },
+    anchor: OutboundThreadAnchor | null
 ): Promise<{ messageId: string; threadId: string | null }> {
-    return sendGmailReply({ to, subject: composed.subject, body: composed.body });
+    if (!anchor) {
+        return sendGmailReply({ to, subject: composed.subject, body: composed.body });
+    }
+
+    const metadata = await getOriginalMessageMetadata(anchor.messageId);
+
+    if (!metadata.rfcMessageId) {
+        return sendGmailReply({ to, subject: composed.subject, body: composed.body });
+    }
+
+    return sendGmailReply({
+        to,
+        subject: composed.subject,
+        body: composed.body,
+        threadId: anchor.threadId ?? undefined,
+        inReplyTo: metadata.rfcMessageId,
+        references: metadata.rfcMessageId,
+    });
 }
 
 async function sendReplyOutreach(
@@ -311,15 +354,33 @@ export async function evaluateOrOpenCollectionCase(
     // the resolution check above.
     if (existing.status === "escalated") return;
 
-    const claimed = await claimCaseForEvaluation(existing.id);
+    // Optimistic-lock compare-and-swap against the exact value just
+    // read above (`existing`) — see claimCaseForEvaluation()'s own doc
+    // comment for why this must not require next_evaluation_at <= now.
+    const claimed = await claimCaseForEvaluation(
+        existing.id,
+        new Date(existing.next_evaluation_at)
+    );
 
     if (!claimed) return; // concurrently claimed by another evaluation pass
 
     const insight = await readInsight(customerId);
     const pendingPaymentDecision = await hasPendingPaymentDecision(customerId);
 
+    // caseState.nextEvaluationAt must be the REAL prior schedule
+    // (`existing`, read before the claim), never `claimed`'s own
+    // next_evaluation_at — the claim just overwrote that to its
+    // temporary +1h lock timestamp, which is not a fact about the case,
+    // only about the claim itself. Every other field is unaffected by
+    // the claim (it only ever touches next_evaluation_at/updated_at),
+    // so toCaseState(claimed) is otherwise correct as-is.
+    const caseState = {
+        ...toCaseState(claimed),
+        nextEvaluationAt: new Date(existing.next_evaluation_at),
+    };
+
     const result = evaluateCollectionCase({
-        caseState: toCaseState(claimed),
+        caseState,
         assessment,
         insight,
         pendingPaymentDecision,
@@ -331,17 +392,51 @@ export async function evaluateOrOpenCollectionCase(
     if (result.outreachContext) {
         const contact = await getCustomerContact(customerId);
 
+        const threadAnchor: OutboundThreadAnchor | null =
+            claimed.last_outbound_gmail_message_id
+                ? {
+                      messageId: claimed.last_outbound_gmail_message_id,
+                      threadId: claimed.last_outbound_gmail_thread_id,
+                  }
+                : null;
+
         try {
             const sendResult = await executeOutreach(
                 result.outreachContext,
                 contact,
                 customerId,
-                replySource
+                replySource,
+                threadAnchor
             );
 
-            await applyCaseTransition(claimed.id, claimed.status, result.fieldPatch);
+            // Same atomic UPDATE as the decision-engine's own field
+            // patch — see OutboundThreadPatch's doc comment in
+            // collectionCaseService.ts for why this must never be a
+            // separate write (a send that succeeds but whose
+            // persistence fails must retry exactly like any other
+            // applyCaseTransition failure today, never resend).
+            const outboundThread: OutboundThreadPatch = {
+                lastOutboundGmailMessageId: sendResult.messageId,
+                lastOutboundGmailThreadId: sendResult.threadId,
+            };
+
+            await applyCaseTransition(
+                claimed.id,
+                claimed.status,
+                result.fieldPatch,
+                outboundThread
+            );
 
             await logOutreachActivity(customerId, claimed.id, result, sendResult);
+
+            if (
+                isExceptionResolved(
+                    result.fieldPatch,
+                    claimed.exception_category !== null
+                )
+            ) {
+                await logExceptionResolvedActivity(customerId, claimed);
+            }
         } catch (error) {
             // The load-bearing action (the send, or building its content)
             // failed — never advance case state or log a sent message
@@ -386,12 +481,71 @@ export async function evaluateOrOpenCollectionCase(
             activityType: "collection_case_resolved",
             message: "Collection case resolved",
         });
+
+        if (
+            isExceptionResolved(
+                result.fieldPatch,
+                claimed.exception_category !== null
+            )
+        ) {
+            await logExceptionResolvedActivity(customerId, claimed);
+        }
+    } else if (isNewBlockerOpened(result, claimed.status)) {
+        // T9, accepted blocker — a silent "wait" decision (chasing is
+        // paused per the approved v2 design; no acknowledgment email is
+        // sent), but the blocker being opened is still a real event
+        // that must be reconstructable from activity_log alone.
+        await logActivity({
+            customerId,
+            activityType: ActivityTypes.COLLECTION_BLOCKER_OPENED,
+            description: result.reason,
+            metadata: { caseId: claimed.id, ...result.evidence },
+        });
+
+        await logEmployeeActivity({
+            activityType: "collection_blocker_opened",
+            message: "Blocker reported; chasing paused",
+        });
     }
-    // 'wait' decisions are deliberately not logged to activity_log — see
-    // this file's design notes: logging every no-op re-evaluation would
-    // flood the audit trail with "still waiting" rows every backfill
-    // cycle, unlike every other event here which represents something
-    // actually happening.
+    // Every other 'wait' decision is deliberately not logged to
+    // activity_log — see this file's design notes: logging every no-op
+    // re-evaluation would flood the audit trail with "still waiting"
+    // rows every backfill cycle, unlike every event above which
+    // represents something actually happening.
+}
+
+async function logExceptionResolvedActivity(
+    customerId: string,
+    claimed: CollectionCaseRow
+): Promise<void> {
+    try {
+        await logActivity({
+            customerId,
+            activityType: ActivityTypes.COLLECTION_EXCEPTION_RESOLVED,
+            description: `${claimed.exception_category === "dispute" ? "Dispute" : "Blocker"} resolved.`,
+            metadata: {
+                caseId: claimed.id,
+                exceptionCategory: claimed.exception_category,
+                exceptionType: claimed.exception_type,
+            },
+        });
+    } catch (activityError) {
+        // Mirrors logOutreachActivity's isolation — the load-bearing
+        // action (the case transition this accompanies) already
+        // succeeded; a logging failure here must never be reported as
+        // that action failing.
+        console.error(
+            "Collection Case Orchestration - exception resolved but activity logging failed:",
+            claimed.id,
+            activityError
+        );
+    }
+}
+
+export interface ExecuteOutreachResult {
+    messageId: string;
+    threadId: string | null;
+    composed: { subject: string; body: string };
 }
 
 async function executeOutreach(
@@ -400,8 +554,9 @@ async function executeOutreach(
     >,
     contact: CustomerContact,
     customerId: string,
-    replySource: ReplySource | undefined
-): Promise<{ messageId: string; threadId: string | null }> {
+    replySource: ReplySource | undefined,
+    threadAnchor: OutboundThreadAnchor | null
+): Promise<ExecuteOutreachResult> {
     switch (outreachContext.kind) {
         case "contact": {
             if (!contact.email) {
@@ -417,7 +572,8 @@ async function executeOutreach(
                 exposure,
             });
 
-            return sendProactiveOutreach(contact.email, composed);
+            const sent = await sendProactiveOutreach(contact.email, composed, threadAnchor);
+            return { ...sent, composed };
         }
 
         case "follow_up": {
@@ -435,7 +591,8 @@ async function executeOutreach(
                 missedCommitment: outreachContext.missedCommitment,
             });
 
-            return sendProactiveOutreach(contact.email, composed);
+            const sent = await sendProactiveOutreach(contact.email, composed, threadAnchor);
+            return { ...sent, composed };
         }
 
         case "check_in": {
@@ -450,7 +607,8 @@ async function executeOutreach(
                 exceptionDetail: null,
             });
 
-            return sendProactiveOutreach(contact.email, composed);
+            const sent = await sendProactiveOutreach(contact.email, composed, threadAnchor);
+            return { ...sent, composed };
         }
 
         case "acknowledge_promise": {
@@ -468,7 +626,8 @@ async function executeOutreach(
                 originalSubject: replySource.subject,
             });
 
-            return sendReplyOutreach(replySource, composed);
+            const sent = await sendReplyOutreach(replySource, composed);
+            return { ...sent, composed };
         }
 
         case "acknowledge_exception": {
@@ -487,24 +646,78 @@ async function executeOutreach(
                 originalSubject: replySource.subject,
             });
 
-            return sendReplyOutreach(replySource, composed);
+            const sent = await sendReplyOutreach(replySource, composed);
+            return { ...sent, composed };
         }
     }
+}
+
+// Pure — no I/O. Distinguishes a broken-promise-triggered follow_up
+// (T19: promise_to_pay -> follow_up, outreachContext.missedCommitment
+// is non-null) from an ordinary silence-triggered follow_up
+// (evaluateUnresponsive: missedCommitment is always null) so the
+// audit trail can tell them apart, without collectionDecisionEngine.ts
+// itself needing a third decision value — both remain "follow_up" at
+// the decision-engine level (§ approved boundary: #3 has no independent
+// authority to invent new decisions).
+export function selectOutreachActivityType(
+    result: Pick<CollectionDecisionResult, "decision" | "outreachContext">
+): ActivityType {
+    if (result.decision === "acknowledge_promise") {
+        return ActivityTypes.COLLECTION_PROMISE_ACKNOWLEDGED;
+    }
+
+    if (result.decision === "acknowledge_exception") {
+        return ActivityTypes.COLLECTION_DISPUTE_OPENED;
+    }
+
+    if (
+        result.decision === "follow_up" &&
+        result.outreachContext?.kind === "follow_up" &&
+        result.outreachContext.missedCommitment !== null
+    ) {
+        return ActivityTypes.COLLECTION_PROMISE_BROKEN;
+    }
+
+    return ActivityTypes.COLLECTION_OUTREACH_SENT;
+}
+
+// Pure — no I/O. True only the FIRST time a case's status transitions
+// INTO payment_blocked this evaluation (T9, accepted blocker) — not on
+// a later re-statement of the same blocker while already
+// status='payment_blocked' (T10/T11 re-evaluate the existing blocker,
+// they do not re-open it), so this fires exactly once per blocker.
+export function isNewBlockerOpened(
+    result: Pick<CollectionDecisionResult, "decision" | "newStatus">,
+    previousStatus: CaseStatus
+): boolean {
+    return (
+        result.decision === "wait" &&
+        result.newStatus === "payment_blocked" &&
+        previousStatus !== "payment_blocked"
+    );
+}
+
+// Pure — no I/O. True whenever this transition's field patch clears an
+// exception that was actually open (a case with no exceptionCategory
+// has nothing to resolve) — covers both the universal resolution gate
+// (buildResolution, case closes entirely) and T4's promise-accepted-
+// while-blocked path (case stays open, only the blocker clears).
+export function isExceptionResolved(
+    fieldPatch: Pick<CollectionDecisionResult["fieldPatch"], "exceptionStatus">,
+    hadExceptionCategory: boolean
+): boolean {
+    return hadExceptionCategory && fieldPatch.exceptionStatus === "resolved";
 }
 
 async function logOutreachActivity(
     customerId: string,
     caseId: string,
     result: ReturnType<typeof evaluateCollectionCase>,
-    sendResult: { messageId: string; threadId: string | null }
+    sendResult: ExecuteOutreachResult
 ): Promise<void> {
     try {
-        const activityType =
-            result.decision === "acknowledge_promise"
-                ? ActivityTypes.COLLECTION_PROMISE_ACKNOWLEDGED
-                : result.decision === "acknowledge_exception"
-                  ? ActivityTypes.COLLECTION_DISPUTE_OPENED
-                  : ActivityTypes.COLLECTION_OUTREACH_SENT;
+        const activityType = selectOutreachActivityType(result);
 
         await logActivity({
             customerId,
@@ -515,6 +728,8 @@ async function logOutreachActivity(
                 decision: result.decision,
                 gmailMessageId: sendResult.messageId,
                 gmailThreadId: sendResult.threadId,
+                subject: sendResult.composed.subject,
+                body: sendResult.composed.body,
                 ...result.evidence,
             },
         });

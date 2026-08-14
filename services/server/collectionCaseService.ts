@@ -54,6 +54,8 @@ export interface CollectionCaseRow {
     escalation_reason: string | null;
     escalation_evidence: Record<string, unknown> | null;
     escalation_deferred_at: string | null;
+    last_outbound_gmail_message_id: string | null;
+    last_outbound_gmail_thread_id: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -362,8 +364,30 @@ export async function openCollectionCase(
 // is human-owned until a human acts or an autonomous payment resolution
 // runs (via resolveCollectionCase(), which bypasses this claim
 // entirely).
+//
+// `expectedNextEvaluationAt` is a true optimistic-lock compare-and-swap:
+// the caller passes the exact next_evaluation_at value it already read
+// (from getActiveCaseForCustomer()/getCasesDueForEvaluation()), and the
+// claim succeeds only if the row is still exactly that value — i.e.
+// nothing else has claimed or transitioned it since. This intentionally
+// does NOT require that value to be <= now: a "due" check belongs to
+// the CALLER (getCasesDueForEvaluation()'s own WHERE clause already
+// enforces it for the scheduled sweep), not to the claim itself — an
+// event-triggered call (a customer's reply, a payment) is a legitimate
+// reason to re-evaluate a case whose scheduled window hasn't arrived
+// yet, and must still be able to claim it. Previously this used
+// `.lte("next_evaluation_at", now)` unconditionally, which silently
+// dropped every early reply (the claim failed, so the case was never
+// evaluated) and, once claimed, fed the decision engine the freshly
+// locked (now + 1h) timestamp instead of the real prior schedule —
+// permanently defeating the awaiting_response/disputed/payment_blocked
+// "has my window expired" checks. See toCaseState()'s caller in
+// collectionCaseOrchestrationService.ts for the other half of that fix
+// (using the pre-claim row's next_evaluation_at, not this claim's
+// locked value, to build CaseState).
 export async function claimCaseForEvaluation(
-    caseId: string
+    caseId: string,
+    expectedNextEvaluationAt: Date
 ): Promise<CollectionCaseRow | null> {
     const now = new Date();
     const lockUntil = new Date(now.getTime() + 60 * 60 * 1000);
@@ -375,7 +399,7 @@ export async function claimCaseForEvaluation(
             updated_at: now.toISOString(),
         })
         .eq("id", caseId)
-        .lte("next_evaluation_at", now.toISOString())
+        .eq("next_evaluation_at", expectedNextEvaluationAt.toISOString())
         .not("status", "in", "(resolved,escalated)")
         .select()
         .maybeSingle();
@@ -400,14 +424,42 @@ export class CaseTransitionConflictError extends Error {
     }
 }
 
+// Non-null only when this transition is the direct result of a
+// successful outbound send (collectionCaseOrchestrationService.ts's
+// executeOutreach()) — written in the SAME conditional UPDATE as the
+// decision engine's fieldPatch below, never as a separate write, so the
+// case's "where do I reply next" pointer can never drift out of sync
+// with last_decision/outreach_count, and a failure here is exactly as
+// safe/retryable as any other applyCaseTransition failure today (the
+// claim's soft lock expires and the next sweep re-evaluates from
+// scratch — it never independently blows up the thread anchor without
+// also failing the state transition, so a retry can never send twice
+// off a half-updated case). collectionDecisionEngine.ts itself never
+// produces this: it has no knowledge of Gmail identifiers (see that
+// file's header).
+export interface OutboundThreadPatch {
+    lastOutboundGmailMessageId: string;
+    lastOutboundGmailThreadId: string | null;
+}
+
 export async function applyCaseTransition(
     caseId: string,
     expectedStatus: CaseStatus,
-    patch: CaseFieldPatch
+    patch: CaseFieldPatch,
+    outboundThread?: OutboundThreadPatch
 ): Promise<CollectionCaseRow> {
+    const row = patchToRow(patch);
+
+    if (outboundThread) {
+        row.last_outbound_gmail_message_id =
+            outboundThread.lastOutboundGmailMessageId;
+        row.last_outbound_gmail_thread_id =
+            outboundThread.lastOutboundGmailThreadId;
+    }
+
     const { data, error } = await supabase
         .from("collection_cases")
-        .update(patchToRow(patch))
+        .update(row)
         .eq("id", caseId)
         .eq("status", expectedStatus)
         .select()

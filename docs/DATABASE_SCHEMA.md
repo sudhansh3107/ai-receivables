@@ -268,6 +268,8 @@ CREATE TABLE public.collection_cases (
   escalation_reason text,
   escalation_evidence jsonb,
   escalation_deferred_at timestamp with time zone,
+  last_outbound_gmail_message_id text,
+  last_outbound_gmail_thread_id text,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT collection_cases_pkey PRIMARY KEY (id),

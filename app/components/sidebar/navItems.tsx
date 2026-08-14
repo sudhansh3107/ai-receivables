@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   BarChart3,
   Settings,
+  Mail,
 } from "lucide-react";
 
 export const navItems = [
@@ -14,6 +15,11 @@ export const navItems = [
     label: "Mission Control",
     icon: Sparkles,
     href: "/",
+  },
+  {
+    label: "Collections",
+    icon: Mail,
+    href: "/collections",
   },
   {
     label: "Employees",
