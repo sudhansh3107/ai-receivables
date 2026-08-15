@@ -89,6 +89,17 @@ export const ActivityTypes = {
     COLLECTION_CASE_RESOLVED: "collection_case_resolved",
     COLLECTION_CASE_RESUMED_BY_HUMAN: "collection_case_resumed_by_human",
 
+    // Responsibility #9 (Escalate to Humans Appropriately). Escalation is
+    // NOT terminal — a case can cycle escalated -> human guidance ->
+    // active -> escalated again any number of times. Each cycle's own
+    // COLLECTION_CASE_ESCALATED row (already logged today) is the
+    // durable record of "why"; these two cover the two NEW human-facing
+    // events that close or defer a cycle. See
+    // collectionCaseService.ts::provideCollectionCaseGuidance() and
+    // ::deferCollectionCaseEscalation().
+    COLLECTION_CASE_GUIDANCE_PROVIDED: "collection_case_guidance_provided",
+    COLLECTION_CASE_ESCALATION_DEFERRED: "collection_case_escalation_deferred",
+
     // Responsibility #6 (Manage Promises to Pay). See
     // services/server/collectionDecisionEngine.ts::buildPromiseOutcome()
     // for exactly when fulfilled/partial fire (grace-window evaluation,
