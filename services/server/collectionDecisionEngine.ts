@@ -71,7 +71,18 @@ export type Assessment =
 
 export type Priority = "low" | "medium" | "high" | "critical";
 
-export type PromiseStatus = "active" | "kept" | "broken" | "superseded";
+// Responsibility #6 (Manage Promises to Pay) added "partial" — a
+// promise whose grace window expired with SOME but not all of the
+// promised amount paid (see runCascade's promise_to_pay branch /
+// buildPromiseOutcome()). Distinct from "broken" (zero progress) so the
+// audit trail and case-visible history never overstate a partial
+// payment as a fully broken commitment.
+export type PromiseStatus =
+    | "active"
+    | "kept"
+    | "broken"
+    | "superseded"
+    | "partial";
 
 export type ExceptionCategory = "dispute" | "blocker";
 
@@ -114,6 +125,15 @@ export interface CaseState {
     promiseConfidence: number | null;
     promiseStatus: PromiseStatus | null;
     brokenPromiseCount: number;
+    // Responsibility #6 — #2's outstandingAmount at the moment THIS
+    // promise was accepted/last revised, frozen as a comparison
+    // baseline. amountPaidSincePromise = baseline - #2's CURRENT live
+    // outstandingAmount, clamped to >= 0 — the only way this file
+    // determines how much has actually been paid toward a promise,
+    // reusing #2's own reconciled truth rather than re-deriving it from
+    // payments rows. Null for legacy cases predating this field, or
+    // when no promise has ever been made.
+    promiseBaselineOutstandingAmount: number | null;
 
     exceptionCategory: ExceptionCategory | null;
     exceptionType: ExceptionType | null;
@@ -130,6 +150,13 @@ export interface AssessmentContext {
     assessment: Assessment;
     priority: Priority;
     hasOutstanding: boolean;
+    // Responsibility #6 — the live outstanding-balance figure #2's
+    // assessment carries (hasOutstanding is just this > 0). Needed so a
+    // promise's fulfilment can be judged against #2's own reconciled
+    // truth (via promiseBaselineOutstandingAmount below) rather than
+    // ever re-deriving it from raw payments/invoices rows here — this
+    // file still performs no I/O and never rebuilds reconciliation.
+    outstandingAmount: number;
 }
 
 // Only the fields available from #1 — kept in the contract for
@@ -219,6 +246,7 @@ export interface CaseFieldPatch {
     promiseConfidence?: number | null;
     promiseStatus?: PromiseStatus | null;
     brokenPromiseCount?: number;
+    promiseBaselineOutstandingAmount?: number | null;
 
     exceptionCategory?: ExceptionCategory | null;
     exceptionType?: ExceptionType | null;
@@ -259,6 +287,14 @@ export type OutreachContext =
               currency: string | null;
               date: string;
           } | null;
+          // Responsibility #6 — set only when this follow_up is the
+          // result of a promise-to-pay evaluation (buildPromiseOutcome()),
+          // so the orchestration layer can log the precise outcome
+          // (fulfilled/partial/broken) instead of inferring it from
+          // missedCommitment's nullability alone. Undefined for the
+          // pre-existing plain unresponsive-silence follow_up, which
+          // carries no promise verdict.
+          promiseOutcome?: "fulfilled" | "partial" | "broken";
       }
     | { kind: "check_in" }
     | { kind: "acknowledge_exception"; category: ExceptionCategory }
@@ -267,6 +303,12 @@ export type OutreachContext =
           amount: number | null;
           currency: string | null;
           date: string;
+          // Responsibility #6 — true when this acceptance overwrote an
+          // already-active (unexpired) promise rather than starting a
+          // fresh promise cycle. Lets the orchestration layer log a
+          // distinct, auditable "promise revised" event instead of
+          // silently losing the prior commitment's details.
+          wasRevision: boolean;
       };
 
 // -----------------------------------------------------------------
@@ -397,8 +439,16 @@ function buildResolution(
             lastDecisionReason: reason,
             lastDecisionAt: now,
             nextEvaluationAt: now,
+            // "partial" also resolves to "kept" here: once the account
+            // is fully cleared, whatever partial progress a promise had
+            // made is now complete — it must not be left reading
+            // "partial" forever just because it happened to cross that
+            // state before the final payment landed.
             promiseStatus:
-                caseState.promiseStatus === "active" ? "kept" : undefined,
+                caseState.promiseStatus === "active" ||
+                caseState.promiseStatus === "partial"
+                    ? "kept"
+                    : undefined,
             exceptionStatus: caseState.exceptionCategory
                 ? "resolved"
                 : undefined,
@@ -448,9 +498,16 @@ function applyLatestResponse(
         if (accepted && extraction) {
             const wasBlocked = caseState.status === "payment_blocked";
 
+            // Responsibility #6 — a revision, not a fresh promise, when
+            // an unexpired promise is already in flight. A promise
+            // arriving after the prior one was kept/broken/superseded/
+            // never made is an ordinary fresh promise cycle (same
+            // fields, no revision semantics).
+            const wasRevision = caseState.promiseStatus === "active";
+
             const reason = extraction.amountStated
-                ? `Customer committed to pay ${extraction.currency ?? ""} ${extraction.amount} by ${extraction.promiseDate}.`
-                : `Customer committed to pay by ${extraction.promiseDate} (amount not stated in the message).`;
+                ? `Customer ${wasRevision ? "revised their commitment to" : "committed to"} pay ${extraction.currency ?? ""} ${extraction.amount} by ${extraction.promiseDate}.`
+                : `Customer ${wasRevision ? "revised their commitment to" : "committed to"} pay by ${extraction.promiseDate} (amount not stated in the message).`;
 
             const nextEvaluationAt = new Date(
                 `${addDaysToDateString(extraction.promiseDate!, 1)}T00:00:00`
@@ -468,6 +525,22 @@ function applyLatestResponse(
                         promiseCurrency: extraction.currency,
                         promiseDate: extraction.promiseDate,
                         promiseConfidence: extraction.confidence,
+                        wasRevision,
+                        // The prior commitment's exact figures, preserved
+                        // in the audit trail (activity_log, via the
+                        // orchestration layer's evidence spread) rather
+                        // than silently lost when promise_* is overwritten
+                        // below.
+                        ...(wasRevision
+                            ? {
+                                  previousPromise: {
+                                      amount: caseState.promiseAmount,
+                                      currency: caseState.promiseCurrency,
+                                      date: caseState.promiseDate,
+                                      confidence: caseState.promiseConfidence,
+                                  },
+                              }
+                            : {}),
                     },
                     nextEvaluationAt,
                     fieldPatch: {
@@ -487,6 +560,13 @@ function applyLatestResponse(
                         promiseSourceEmailId: latestResponse.emailId,
                         promiseConfidence: extraction.confidence,
                         promiseStatus: "active",
+                        // Fresh baseline for THIS promise (new or
+                        // revised) — always #2's current live figure, so
+                        // fulfilment is judged against progress made
+                        // going forward from now, never against a stale
+                        // snapshot from an earlier, superseded promise.
+                        promiseBaselineOutstandingAmount:
+                            assessment.outstandingAmount,
                         exceptionStatus: wasBlocked ? "resolved" : undefined,
                     },
                     outreachContext: {
@@ -494,6 +574,7 @@ function applyLatestResponse(
                         amount: extraction.amount,
                         currency: extraction.currency,
                         date: extraction.promiseDate!,
+                        wasRevision,
                     },
                 },
                 evidencePatch: {},
@@ -766,9 +847,42 @@ function runCascade(
         );
     }
 
-    // promise_to_pay — T18 (self, partial/before grace) / T19 (broken,
-    // follow_up).
+    // promise_to_pay — T18 (self, before grace, unfulfilled) / T19
+    // (fulfilled/partial/broken, follow_up). Responsibility #6: fulfilment
+    // is judged against #2's live outstanding-balance truth (via
+    // promiseBaselineOutstandingAmount), never against the customer's own
+    // claim — a payment_received email never reaches this file at all
+    // (see collectionCaseOrchestrationService.ts's own dispatch), so the
+    // ONLY way a promise is ever marked fulfilled/partial here is a real,
+    // reconciled drop in #2's outstandingAmount since the promise was made.
     if (caseState.status === "promise_to_pay") {
+        const baseline = caseState.promiseBaselineOutstandingAmount;
+        const amountPaidSincePromise =
+            baseline === null
+                ? 0
+                : Math.max(0, baseline - assessment.outstandingAmount);
+
+        // A specific figure was promised and fully covered by payments
+        // received since — checked FIRST, before the grace-window gate,
+        // so a payment satisfying the promise EARLY (before the promised
+        // date) is recognized the next time this case is evaluated
+        // rather than silently waiting out the window. Only full
+        // satisfaction short-circuits early; partial progress before the
+        // deadline is not yet a verdict (the customer still has time).
+        if (
+            caseState.promiseAmount !== null &&
+            amountPaidSincePromise >= caseState.promiseAmount
+        ) {
+            return buildPromiseOutcome(
+                caseState,
+                assessment,
+                insight,
+                now,
+                "fulfilled",
+                amountPaidSincePromise
+            );
+        }
+
         const graceExpiry = new Date(
             `${addDaysToDateString(caseState.promiseDate!, 1)}T00:00:00`
         );
@@ -785,42 +899,22 @@ function runCascade(
             );
         }
 
-        const reason = `Customer's promised payment date (${caseState.promiseDate}) passed without payment.`;
-        const nextEvaluationAt = addDays(now, FIRST_RESPONSE_WINDOW_DAYS);
+        // Grace window passed without full satisfaction — distinguish a
+        // genuinely broken promise (zero progress) from a partial payment
+        // (some progress, short of what was promised, or — for a
+        // date-only promise with no target figure — any measurable drop
+        // in outstandingAmount at all).
+        const outcome: "partial" | "broken" =
+            amountPaidSincePromise > 0 ? "partial" : "broken";
 
-        return {
-            decision: "follow_up",
-            newStatus: "awaiting_response",
-            priority: assessment.priority,
-            reason,
-            evidence: {
-                ...baseEvidence(caseState, assessment, insight),
-                missedPromiseDate: caseState.promiseDate,
-                missedPromiseAmount: caseState.promiseAmount,
-            },
-            nextEvaluationAt,
-            fieldPatch: {
-                status: "awaiting_response",
-                lastDecision: "follow_up",
-                lastDecisionReason: reason,
-                lastDecisionAt: now,
-                lastActionAt: now,
-                nextEvaluationAt,
-                outreachCount: caseState.outreachCount + 1,
-                unansweredOutreachCount: caseState.unansweredOutreachCount + 1,
-                lastOutreachAt: now,
-                promiseStatus: "broken",
-                brokenPromiseCount: caseState.brokenPromiseCount + 1,
-            },
-            outreachContext: {
-                kind: "follow_up",
-                missedCommitment: {
-                    amount: caseState.promiseAmount,
-                    currency: caseState.promiseCurrency,
-                    date: caseState.promiseDate!,
-                },
-            },
-        };
+        return buildPromiseOutcome(
+            caseState,
+            assessment,
+            insight,
+            now,
+            outcome,
+            amountPaidSincePromise
+        );
     }
 
     // payment_blocked — T10 (check_in, gate not met) / T11 (escalate,
@@ -1045,6 +1139,98 @@ function buildEscalation(
             exceptionStatus: caseState.exceptionCategory
                 ? "routed_to_human"
                 : undefined,
+        },
+    };
+}
+
+// Responsibility #6 (Manage Promises to Pay) — the single builder for a
+// promise-to-pay verdict (fulfilled/partial/broken), called from the
+// promise_to_pay branch of runCascade() above. All three outcomes route
+// to the same destination (status='awaiting_response', decision=
+// 'follow_up') — fulfilled still needs continued chasing for any
+// remaining, unrelated exposure; partial/broken both still need
+// chasing for the shortfall — only promiseStatus, brokenPromiseCount,
+// the composed message's missedCommitment, and the activity type the
+// orchestration layer selects (via outreachContext.promiseOutcome)
+// differ between them.
+function buildPromiseOutcome(
+    caseState: CaseState,
+    assessment: AssessmentContext,
+    insight: InsightContext,
+    now: Date,
+    outcome: "fulfilled" | "partial" | "broken",
+    amountPaidSincePromise: number
+): CollectionDecisionResult {
+    const currencyLabel = caseState.promiseCurrency
+        ? `${caseState.promiseCurrency} `
+        : "";
+
+    const reason =
+        outcome === "fulfilled"
+            ? `Customer's promised payment of ${currencyLabel}${caseState.promiseAmount} was received in full; continuing to follow up on any remaining balance.`
+            : outcome === "partial"
+              ? `Customer partially paid toward their ${caseState.promiseDate} commitment (${currencyLabel}${amountPaidSincePromise} of ${caseState.promiseAmount ?? "an unstated amount"} received); balance remains outstanding past the promised date.`
+              : `Customer's promised payment date (${caseState.promiseDate}) passed without payment.`;
+
+    const nextEvaluationAt = addDays(now, FIRST_RESPONSE_WINDOW_DAYS);
+
+    const newPromiseStatus: PromiseStatus =
+        outcome === "fulfilled"
+            ? "kept"
+            : outcome === "partial"
+              ? "partial"
+              : "broken";
+
+    return {
+        decision: "follow_up",
+        newStatus: "awaiting_response",
+        priority: assessment.priority,
+        reason,
+        evidence: {
+            ...baseEvidence(caseState, assessment, insight),
+            promiseOutcome: outcome,
+            amountPaidSincePromise,
+            promiseAmount: caseState.promiseAmount,
+            promiseDate: caseState.promiseDate,
+        },
+        nextEvaluationAt,
+        fieldPatch: {
+            status: "awaiting_response",
+            lastDecision: "follow_up",
+            lastDecisionReason: reason,
+            lastDecisionAt: now,
+            lastActionAt: now,
+            nextEvaluationAt,
+            outreachCount: caseState.outreachCount + 1,
+            // A fulfilled promise resets the silence counter (the
+            // customer just delivered) exactly like T4's own accept —
+            // partial/broken both leave the counter incrementing, same
+            // as the pre-#6 behavior for a broken promise.
+            unansweredOutreachCount:
+                outcome === "fulfilled"
+                    ? 0
+                    : caseState.unansweredOutreachCount + 1,
+            lastOutreachAt: now,
+            promiseStatus: newPromiseStatus,
+            brokenPromiseCount:
+                outcome === "broken"
+                    ? caseState.brokenPromiseCount + 1
+                    : undefined,
+        },
+        outreachContext: {
+            kind: "follow_up",
+            // No missed commitment to reference for a kept promise — the
+            // composed email must never scold a customer for a promise
+            // they just fulfilled.
+            missedCommitment:
+                outcome === "fulfilled"
+                    ? null
+                    : {
+                          amount: caseState.promiseAmount,
+                          currency: caseState.promiseCurrency,
+                          date: caseState.promiseDate!,
+                      },
+            promiseOutcome: outcome,
         },
     };
 }

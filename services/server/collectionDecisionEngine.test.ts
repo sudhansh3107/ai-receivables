@@ -26,6 +26,7 @@ function makeCaseState(overrides: Partial<CaseState> = {}): CaseState {
         promiseConfidence: null,
         promiseStatus: null,
         brokenPromiseCount: 0,
+        promiseBaselineOutstandingAmount: null,
         exceptionCategory: null,
         exceptionType: null,
         exceptionStatus: null,
@@ -42,6 +43,7 @@ function makeAssessment(
         assessment: "needs_attention",
         priority: "medium",
         hasOutstanding: true,
+        outstandingAmount: 50000,
         ...overrides,
     };
 }
@@ -556,6 +558,7 @@ describe("T18/T19 — promise_to_pay lifecycle", () => {
                 currency: "INR",
                 date: "2026-08-18",
             },
+            promiseOutcome: "broken",
         });
     });
 
@@ -576,6 +579,287 @@ describe("T18/T19 — promise_to_pay lifecycle", () => {
 
         expect(result.decision).toBe("wait");
         expect(result.newStatus).toBe("promise_to_pay");
+    });
+});
+
+describe("Responsibility #6 — promise fulfilment lifecycle", () => {
+    it("recognizes full satisfaction EARLY (before the grace window) once the promised amount has actually been paid down", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "promise_to_pay",
+                promiseDate: "2026-09-01", // well after NOW — grace has not started
+                promiseAmount: 20000,
+                promiseCurrency: "INR",
+                promiseBaselineOutstandingAmount: 50000,
+            }),
+            // #2's live outstandingAmount dropped by 25000 since the
+            // promise was made — more than the 20000 promised.
+            assessment: makeAssessment({ outstandingAmount: 25000 }),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: null,
+            now: NOW,
+            triggeredByPayment: true,
+        });
+
+        expect(result.decision).toBe("follow_up");
+        expect(result.newStatus).toBe("awaiting_response");
+        expect(result.fieldPatch.promiseStatus).toBe("kept");
+        // A fulfilled promise is not a broken one — the counter must
+        // never increment for this outcome.
+        expect(result.fieldPatch.brokenPromiseCount).toBeUndefined();
+        // Resets exactly like an accepted promise — the customer just
+        // delivered.
+        expect(result.fieldPatch.unansweredOutreachCount).toBe(0);
+        expect(result.outreachContext).toEqual({
+            kind: "follow_up",
+            missedCommitment: null,
+            promiseOutcome: "fulfilled",
+        });
+    });
+
+    it("still recognizes fulfilment at/after grace expiry, not just early — fulfilment is checked before the broken-promise path", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "promise_to_pay",
+                promiseDate: "2026-08-18", // grace already expired at NOW
+                promiseAmount: 1000,
+                promiseCurrency: "INR",
+                promiseBaselineOutstandingAmount: 50000,
+            }),
+            assessment: makeAssessment({ outstandingAmount: 48000 }), // 2000 paid
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: null,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.fieldPatch.promiseStatus).toBe("kept");
+        expect(result.fieldPatch.brokenPromiseCount).toBeUndefined();
+    });
+
+    it("classifies a shortfall at grace expiry as PARTIAL, not broken, when some (but not all) of the promised amount was paid", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "promise_to_pay",
+                promiseDate: "2026-08-18",
+                promiseAmount: 10000,
+                promiseCurrency: "INR",
+                promiseBaselineOutstandingAmount: 50000,
+                brokenPromiseCount: 0,
+            }),
+            assessment: makeAssessment({ outstandingAmount: 45000 }), // only 5000 paid
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: null,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.decision).toBe("follow_up");
+        expect(result.newStatus).toBe("awaiting_response");
+        expect(result.fieldPatch.promiseStatus).toBe("partial");
+        // Partial is not broken — must not count toward the broken-promise
+        // escalation floor.
+        expect(result.fieldPatch.brokenPromiseCount).toBeUndefined();
+        expect(result.fieldPatch.unansweredOutreachCount).toBe(1);
+        expect(result.outreachContext).toEqual({
+            kind: "follow_up",
+            missedCommitment: {
+                amount: 10000,
+                currency: "INR",
+                date: "2026-08-18",
+            },
+            promiseOutcome: "partial",
+        });
+    });
+
+    it("classifies zero progress at grace expiry as BROKEN even with an explicit (non-legacy) baseline on record", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "promise_to_pay",
+                promiseDate: "2026-08-18",
+                promiseAmount: 10000,
+                promiseCurrency: "INR",
+                promiseBaselineOutstandingAmount: 50000,
+            }),
+            assessment: makeAssessment({ outstandingAmount: 50000 }), // nothing paid
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: null,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.fieldPatch.promiseStatus).toBe("broken");
+        expect(result.fieldPatch.brokenPromiseCount).toBe(1);
+    });
+
+    it("date-only promise (no amount stated): any measurable payment progress at grace expiry reads as PARTIAL, not broken", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "promise_to_pay",
+                promiseDate: "2026-08-18",
+                promiseAmount: null,
+                promiseCurrency: null,
+                promiseBaselineOutstandingAmount: 50000,
+            }),
+            assessment: makeAssessment({ outstandingAmount: 40000 }), // some progress
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: null,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.fieldPatch.promiseStatus).toBe("partial");
+    });
+
+    it("date-only promise with zero progress at grace expiry still reads as BROKEN", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "promise_to_pay",
+                promiseDate: "2026-08-18",
+                promiseAmount: null,
+                promiseCurrency: null,
+                promiseBaselineOutstandingAmount: 50000,
+            }),
+            assessment: makeAssessment({ outstandingAmount: 50000 }),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: null,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.fieldPatch.promiseStatus).toBe("broken");
+    });
+
+    it("a legacy case with no baseline snapshot (predating this field) falls back to the pre-#6 broken behavior rather than crashing", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "promise_to_pay",
+                promiseDate: "2026-08-18",
+                promiseAmount: 1000,
+                promiseBaselineOutstandingAmount: null,
+            }),
+            assessment: makeAssessment({ outstandingAmount: 30000 }),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: null,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.fieldPatch.promiseStatus).toBe("broken");
+    });
+
+    it("a promise revision (new payment_promise while one is still active) preserves the prior commitment in evidence and resets the baseline to the CURRENT live outstanding figure", () => {
+        const latestResponse: LatestResponse = {
+            emailId: "email-revision",
+            classification: "payment_promise",
+            classificationConfidence: 0.92,
+            receivedAt: NOW,
+            promiseExtraction: {
+                intentClear: true,
+                amountStated: true,
+                amount: 60000,
+                currency: "INR",
+                promiseDate: "2026-09-10",
+                confidence: 0.92,
+            },
+        };
+
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "promise_to_pay",
+                promiseStatus: "active",
+                promiseAmount: 30000,
+                promiseCurrency: "INR",
+                promiseDate: "2026-08-22",
+                promiseConfidence: 0.85,
+                promiseBaselineOutstandingAmount: 70000, // stale baseline from the FIRST promise
+            }),
+            assessment: makeAssessment({ outstandingAmount: 55000 }), // current live figure
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.decision).toBe("acknowledge_promise");
+        expect(result.evidence.wasRevision).toBe(true);
+        expect(result.evidence.previousPromise).toEqual({
+            amount: 30000,
+            currency: "INR",
+            date: "2026-08-22",
+            confidence: 0.85,
+        });
+        expect(result.fieldPatch.promiseAmount).toBe(60000);
+        expect(result.fieldPatch.promiseDate).toBe("2026-09-10");
+        // Baseline resets to the CURRENT live figure, never the stale
+        // baseline from the superseded promise.
+        expect(result.fieldPatch.promiseBaselineOutstandingAmount).toBe(55000);
+        expect(result.outreachContext).toMatchObject({
+            kind: "acknowledge_promise",
+            wasRevision: true,
+        });
+    });
+
+    it("a fresh promise after a prior one was already broken is NOT treated as a revision", () => {
+        const latestResponse: LatestResponse = {
+            emailId: "email-fresh",
+            classification: "payment_promise",
+            classificationConfidence: 0.9,
+            receivedAt: NOW,
+            promiseExtraction: {
+                intentClear: true,
+                amountStated: true,
+                amount: 15000,
+                currency: "INR",
+                promiseDate: "2026-09-05",
+                confidence: 0.9,
+            },
+        };
+
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "awaiting_response",
+                promiseStatus: "broken",
+                promiseAmount: 10000,
+                promiseDate: "2026-08-10",
+            }),
+            assessment: makeAssessment({ outstandingAmount: 40000 }),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.evidence.wasRevision).toBe(false);
+        expect(result.evidence.previousPromise).toBeUndefined();
+        expect(result.outreachContext).toMatchObject({ wasRevision: false });
+    });
+
+    it("buildResolution flips a 'partial' promise to 'kept' once the account fully clears, same as 'active'", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "awaiting_response",
+                promiseStatus: "partial",
+            }),
+            assessment: makeAssessment({ hasOutstanding: false }),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: null,
+            now: NOW,
+            triggeredByPayment: true,
+        });
+
+        expect(result.decision).toBe("resolve");
+        expect(result.fieldPatch.promiseStatus).toBe("kept");
     });
 });
 

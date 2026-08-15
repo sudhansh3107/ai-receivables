@@ -44,6 +44,7 @@ export interface CollectionCaseRow {
     promise_confidence: number | string | null;
     promise_status: string | null;
     broken_promise_count: number;
+    promise_baseline_outstanding_amount: number | string | null;
     exception_category: string | null;
     exception_type: string | null;
     exception_status: string | null;
@@ -86,6 +87,14 @@ export function toCaseState(row: CollectionCaseRow): CaseState {
                 : Number(row.promise_confidence),
         promiseStatus: row.promise_status as CaseState["promiseStatus"],
         brokenPromiseCount: row.broken_promise_count,
+        // == (not ===) deliberately also covers `undefined` — a fixture
+        // or a row from before this column existed — as "no baseline
+        // available", exactly like a genuine NULL, rather than
+        // producing Number(undefined) = NaN.
+        promiseBaselineOutstandingAmount:
+            row.promise_baseline_outstanding_amount == null
+                ? null
+                : Number(row.promise_baseline_outstanding_amount),
         exceptionCategory:
             row.exception_category as CaseState["exceptionCategory"],
         exceptionType: row.exception_type as CaseState["exceptionType"],
@@ -131,6 +140,7 @@ function patchToRow(patch: CaseFieldPatch): Record<string, unknown> {
     if (patch.promiseConfidence !== undefined) row.promise_confidence = patch.promiseConfidence;
     if (patch.promiseStatus !== undefined) row.promise_status = patch.promiseStatus;
     if (patch.brokenPromiseCount !== undefined) row.broken_promise_count = patch.brokenPromiseCount;
+    if (patch.promiseBaselineOutstandingAmount !== undefined) row.promise_baseline_outstanding_amount = patch.promiseBaselineOutstandingAmount;
 
     if (patch.exceptionCategory !== undefined) row.exception_category = patch.exceptionCategory;
     if (patch.exceptionType !== undefined) row.exception_type = patch.exceptionType;

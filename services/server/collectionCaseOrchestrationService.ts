@@ -76,13 +76,15 @@ async function readAssessment(
         reason: string;
     };
 
-    const hasOutstanding = Number(row.evidence?.outstandingAmount ?? 0) > 0;
+    const outstandingAmount = Number(row.evidence?.outstandingAmount ?? 0);
+    const hasOutstanding = outstandingAmount > 0;
 
     return {
         context: {
             assessment: row.assessment,
             priority: row.priority,
             hasOutstanding,
+            outstandingAmount,
         },
         snapshot: {
             assessment: row.assessment,
@@ -652,31 +654,51 @@ async function executeOutreach(
     }
 }
 
-// Pure — no I/O. Distinguishes a broken-promise-triggered follow_up
-// (T19: promise_to_pay -> follow_up, outreachContext.missedCommitment
-// is non-null) from an ordinary silence-triggered follow_up
-// (evaluateUnresponsive: missedCommitment is always null) so the
-// audit trail can tell them apart, without collectionDecisionEngine.ts
-// itself needing a third decision value — both remain "follow_up" at
-// the decision-engine level (§ approved boundary: #3 has no independent
-// authority to invent new decisions).
+// Pure — no I/O. Distinguishes a promise-outcome-triggered follow_up
+// (T19: promise_to_pay -> follow_up, outreachContext.promiseOutcome set
+// by Responsibility #6's buildPromiseOutcome()) from an ordinary
+// silence-triggered follow_up (evaluateUnresponsive: promiseOutcome is
+// always undefined) so the audit trail can tell them apart, without
+// collectionDecisionEngine.ts itself needing a third decision value —
+// both remain "follow_up" at the decision-engine level (§ approved
+// boundary: #3 has no independent authority to invent new decisions).
+//
+// Also distinguishes a fresh promise acceptance from a REVISION of an
+// already-active promise (outreachContext.wasRevision, set by the T4
+// branch of applyLatestResponse()) — both remain "acknowledge_promise"
+// at the decision-engine level; only the activity type differs, so the
+// history preserves that a commitment changed rather than reading as a
+// second, unrelated acknowledgment.
 export function selectOutreachActivityType(
     result: Pick<CollectionDecisionResult, "decision" | "outreachContext">
 ): ActivityType {
     if (result.decision === "acknowledge_promise") {
-        return ActivityTypes.COLLECTION_PROMISE_ACKNOWLEDGED;
+        return result.outreachContext?.kind === "acknowledge_promise" &&
+            result.outreachContext.wasRevision
+            ? ActivityTypes.COLLECTION_PROMISE_REVISED
+            : ActivityTypes.COLLECTION_PROMISE_ACKNOWLEDGED;
     }
 
     if (result.decision === "acknowledge_exception") {
         return ActivityTypes.COLLECTION_DISPUTE_OPENED;
     }
 
-    if (
-        result.decision === "follow_up" &&
-        result.outreachContext?.kind === "follow_up" &&
-        result.outreachContext.missedCommitment !== null
-    ) {
-        return ActivityTypes.COLLECTION_PROMISE_BROKEN;
+    if (result.decision === "follow_up" && result.outreachContext?.kind === "follow_up") {
+        switch (result.outreachContext.promiseOutcome) {
+            case "fulfilled":
+                return ActivityTypes.COLLECTION_PROMISE_FULFILLED;
+            case "partial":
+                return ActivityTypes.COLLECTION_PROMISE_PARTIALLY_FULFILLED;
+            case "broken":
+                return ActivityTypes.COLLECTION_PROMISE_BROKEN;
+            default:
+                // Legacy inference for any caller that predates
+                // promiseOutcome — preserved so pre-#6 unit tests and
+                // any other construction path keep working unchanged.
+                if (result.outreachContext.missedCommitment !== null) {
+                    return ActivityTypes.COLLECTION_PROMISE_BROKEN;
+                }
+        }
     }
 
     return ActivityTypes.COLLECTION_OUTREACH_SENT;
@@ -734,17 +756,31 @@ async function logOutreachActivity(
             },
         });
 
+        const promiseOutcome =
+            result.outreachContext?.kind === "follow_up"
+                ? result.outreachContext.promiseOutcome
+                : undefined;
+        const wasRevision =
+            result.outreachContext?.kind === "acknowledge_promise" &&
+            result.outreachContext.wasRevision;
+
         await logEmployeeActivity({
             activityType: `collection_${result.decision}`,
             message:
                 result.decision === "contact"
                     ? "First outreach sent"
                     : result.decision === "follow_up"
-                      ? `Follow-up sent · attempt ${(result.evidence.outreachCount as number | undefined) ?? "?"}`
+                      ? promiseOutcome === "fulfilled"
+                          ? "Promise fulfilled — following up on remaining balance"
+                          : promiseOutcome === "partial"
+                            ? "Partial payment received against promise"
+                            : `Follow-up sent · attempt ${(result.evidence.outreachCount as number | undefined) ?? "?"}`
                       : result.decision === "check_in"
                         ? "Blocker check-in sent"
                         : result.decision === "acknowledge_promise"
-                          ? "Payment promise acknowledged"
+                          ? wasRevision
+                              ? "Payment promise revised"
+                              : "Payment promise acknowledged"
                           : "Dispute acknowledged, routed for review",
         });
     } catch (activityError) {

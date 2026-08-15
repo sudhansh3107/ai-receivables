@@ -89,6 +89,15 @@ export const ActivityTypes = {
     COLLECTION_CASE_RESOLVED: "collection_case_resolved",
     COLLECTION_CASE_RESUMED_BY_HUMAN: "collection_case_resumed_by_human",
 
+    // Responsibility #6 (Manage Promises to Pay). See
+    // services/server/collectionDecisionEngine.ts::buildPromiseOutcome()
+    // for exactly when fulfilled/partial fire (grace-window evaluation,
+    // judged against #2's live outstanding-balance truth) and the T4
+    // branch of applyLatestResponse() for revised.
+    COLLECTION_PROMISE_FULFILLED: "collection_promise_fulfilled",
+    COLLECTION_PROMISE_PARTIALLY_FULFILLED: "collection_promise_partially_fulfilled",
+    COLLECTION_PROMISE_REVISED: "collection_promise_revised",
+
 } as const;
 
 export type ActivityType =

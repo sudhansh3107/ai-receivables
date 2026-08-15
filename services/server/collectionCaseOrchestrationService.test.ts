@@ -350,6 +350,102 @@ describe("selectOutreachActivityType — pure", () => {
             )
         ).toBe("collection_outreach_sent");
     });
+
+    // Responsibility #6 — the explicit promiseOutcome/wasRevision
+    // discriminants take precedence over any legacy inference.
+    it("maps a fulfilled-promise follow_up to COLLECTION_PROMISE_FULFILLED", async () => {
+        const { selectOutreachActivityType } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        const outreachContext: OutreachContext = {
+            kind: "follow_up",
+            missedCommitment: null,
+            promiseOutcome: "fulfilled",
+        };
+
+        expect(
+            selectOutreachActivityType(
+                makeResult({ decision: "follow_up", outreachContext })
+            )
+        ).toBe("collection_promise_fulfilled");
+    });
+
+    it("maps a partially-fulfilled promise follow_up to COLLECTION_PROMISE_PARTIALLY_FULFILLED", async () => {
+        const { selectOutreachActivityType } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        const outreachContext: OutreachContext = {
+            kind: "follow_up",
+            missedCommitment: { amount: 10000, currency: "INR", date: "2026-08-01" },
+            promiseOutcome: "partial",
+        };
+
+        expect(
+            selectOutreachActivityType(
+                makeResult({ decision: "follow_up", outreachContext })
+            )
+        ).toBe("collection_promise_partially_fulfilled");
+    });
+
+    it("maps a promiseOutcome='broken' follow_up to COLLECTION_PROMISE_BROKEN via the explicit discriminant (not just missedCommitment inference)", async () => {
+        const { selectOutreachActivityType } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        const outreachContext: OutreachContext = {
+            kind: "follow_up",
+            missedCommitment: { amount: 10000, currency: "INR", date: "2026-08-01" },
+            promiseOutcome: "broken",
+        };
+
+        expect(
+            selectOutreachActivityType(
+                makeResult({ decision: "follow_up", outreachContext })
+            )
+        ).toBe("collection_promise_broken");
+    });
+
+    it("maps a REVISED promise acceptance to COLLECTION_PROMISE_REVISED", async () => {
+        const { selectOutreachActivityType } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        const outreachContext: OutreachContext = {
+            kind: "acknowledge_promise",
+            amount: 60000,
+            currency: "INR",
+            date: "2026-09-10",
+            wasRevision: true,
+        };
+
+        expect(
+            selectOutreachActivityType(
+                makeResult({ decision: "acknowledge_promise", outreachContext })
+            )
+        ).toBe("collection_promise_revised");
+    });
+
+    it("maps a fresh (non-revision) promise acceptance to COLLECTION_PROMISE_ACKNOWLEDGED", async () => {
+        const { selectOutreachActivityType } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        const outreachContext: OutreachContext = {
+            kind: "acknowledge_promise",
+            amount: 15000,
+            currency: "INR",
+            date: "2026-09-05",
+            wasRevision: false,
+        };
+
+        expect(
+            selectOutreachActivityType(
+                makeResult({ decision: "acknowledge_promise", outreachContext })
+            )
+        ).toBe("collection_promise_acknowledged");
+    });
 });
 
 describe("isNewBlockerOpened — pure", () => {
