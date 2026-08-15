@@ -125,6 +125,25 @@ vi.mock("../EmployeeActivityService", () => ({
     logEmployeeActivity: (...args: unknown[]) => logEmployeeActivityMock(...args),
 }));
 
+// Responsibility #5 (Understand Customer Responses) — the "structured
+// understanding" step for handleCollectionRelevantEmail() tests below.
+// Mocked directly (rather than letting them hit the mocked-empty
+// `openai` object) so each test can assert exactly what input the
+// extraction was called with and control exactly what evidence it
+// returns.
+const extractPromiseDetailsMock = vi.fn();
+const extractExceptionDetailsMock = vi.fn();
+
+vi.mock("./promisePaymentExtractionService", () => ({
+    extractPromiseDetails: (...args: unknown[]) =>
+        extractPromiseDetailsMock(...args),
+}));
+
+vi.mock("./collectionExceptionExtractionService", () => ({
+    extractExceptionDetails: (...args: unknown[]) =>
+        extractExceptionDetailsMock(...args),
+}));
+
 describe("sendProactiveOutreach — outbound thread continuity", () => {
     beforeEach(() => {
         vi.restoreAllMocks();
@@ -718,5 +737,337 @@ describe("evaluateOrOpenCollectionCase — claim/schedule regression", () => {
             .getCalls("collection_cases")
             .find((call) => call.method === "eq" && call.args[0] === "next_evaluation_at");
         expect(claimCall?.args[1]).toBe(farFuture);
+    });
+});
+
+// ---------------------------------------------------------------------
+// Responsibility #5 (Understand Customer Responses) — handleCollectionRelevantEmail()
+// end-to-end: relevance/classification have already happened upstream
+// (emailProcessingService.ts); this is deterministic customer
+// resolution, structured-understanding extraction dispatch, and
+// case linkage/persistence for realistic response types and the two
+// "fail safe, never guess" edge cases (ambiguous sender, no active
+// case).
+// ---------------------------------------------------------------------
+
+function baseCollectionCaseRow(
+    overrides: Record<string, unknown> = {}
+) {
+    return {
+        id: "case-r5",
+        customer_id: "cust-r5",
+        status: "awaiting_response",
+        opened_at: "2026-08-01T00:00:00.000Z",
+        closed_at: null,
+        closed_reason: null,
+        triggering_invoice_id: null,
+        opening_assessment_snapshot: {},
+        last_decision: "contact",
+        last_decision_reason: "First contact sent.",
+        last_decision_at: "2026-08-01T00:00:00.000Z",
+        last_action_at: "2026-08-01T00:00:00.000Z",
+        next_evaluation_at: "2020-01-01T00:00:00.000Z",
+        outreach_count: 1,
+        unanswered_outreach_count: 1,
+        last_outreach_at: "2026-08-01T00:00:00.000Z",
+        last_response_at: null,
+        last_response_classification: null,
+        last_response_email_id: null,
+        promise_amount: null,
+        promise_currency: null,
+        promise_date: null,
+        promise_source_email_id: null,
+        promise_confidence: null,
+        promise_status: null,
+        broken_promise_count: 0,
+        exception_category: null,
+        exception_type: null,
+        exception_status: null,
+        exception_detail: null,
+        exception_source_email_id: null,
+        exception_opened_at: null,
+        escalated_at: null,
+        escalation_reason: null,
+        escalation_evidence: null,
+        escalation_deferred_at: null,
+        last_outbound_gmail_message_id: null,
+        last_outbound_gmail_thread_id: null,
+        ...overrides,
+    };
+}
+
+function queueR5Assessment() {
+    supabaseMock.queueResponse("customer_receivables_assessments", {
+        data: {
+            assessment: "needs_attention",
+            priority: "medium",
+            severity: "elevated",
+            deviation: "unknown",
+            reason: "Test overdue balance.",
+            evidence: { outstandingAmount: 75000 },
+        },
+        error: null,
+    });
+}
+
+describe("handleCollectionRelevantEmail — understand customer responses", () => {
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        sendGmailReplyMock.mockReset();
+        getOriginalMessageMetadataMock.mockReset();
+        logActivityMock.mockReset();
+        logEmployeeActivityMock.mockReset();
+        getOverdueInvoiceDetailMock.mockReset();
+        extractPromiseDetailsMock.mockReset();
+        extractExceptionDetailsMock.mockReset();
+        supabaseMock.reset();
+    });
+
+    it("payment_promise: extracts structured evidence, links to the customer's active case, and persists it", async () => {
+        const { handleCollectionRelevantEmail } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        // findCustomerByEmailSafe()
+        supabaseMock.queueResponse("customers", {
+            data: { id: "cust-r5", company_name: "Acme Co", email: "acme@example.com" },
+            error: null,
+        });
+
+        // handleCollectionRelevantEmail's own getActiveCaseForCustomer()
+        const caseRow = baseCollectionCaseRow();
+        supabaseMock.queueResponse("collection_cases", { data: caseRow, error: null });
+
+        extractPromiseDetailsMock.mockResolvedValueOnce({
+            intentClear: true,
+            amountStated: true,
+            amount: 75000,
+            currency: "INR",
+            promiseDate: "2026-09-01",
+            confidence: 0.92,
+        });
+
+        queueR5Assessment();
+        // evaluateOrOpenCollectionCase's own getActiveCaseForCustomer()
+        supabaseMock.queueResponse("collection_cases", { data: caseRow, error: null });
+        // claimCaseForEvaluation()
+        supabaseMock.queueResponse("collection_cases", { data: caseRow, error: null });
+        supabaseMock.queueResponse("customer_insights", {
+            data: { risk_level: "moderate" },
+            error: null,
+        });
+        supabaseMock.queueResponse("payment_decisions", {
+            data: null,
+            error: null,
+            count: 0,
+        });
+        // getCustomerContact()
+        supabaseMock.queueResponse("customers", {
+            data: { company_name: "Acme Co", contact_name: null, email: "acme@example.com" },
+            error: null,
+        });
+
+        getOriginalMessageMetadataMock.mockResolvedValueOnce({
+            rfcMessageId: "rfc-promise@mail.gmail.com",
+        });
+        sendGmailReplyMock.mockResolvedValueOnce({
+            messageId: "msg-ack-promise",
+            threadId: "thread-r5",
+        });
+
+        // applyCaseTransition()
+        supabaseMock.queueResponse("collection_cases", {
+            data: { ...caseRow, status: "promise_to_pay" },
+            error: null,
+        });
+
+        await handleCollectionRelevantEmail({
+            id: "email-r5-promise",
+            subject: "Re: Outstanding balance",
+            text_body: "We will pay the full amount by Sept 1st.",
+            from_email: "acme@example.com",
+            classification: "payment_promise",
+            classification_confidence: 0.9,
+            gmail_message_id: "inbound-r5-promise",
+            gmail_thread_id: "thread-r5",
+        });
+
+        // Structured understanding: extraction was actually invoked with
+        // the email's own content, not re-derived from the classification
+        // alone.
+        expect(extractPromiseDetailsMock).toHaveBeenCalledWith({
+            subject: "Re: Outstanding balance",
+            textBody: "We will pay the full amount by Sept 1st.",
+        });
+        expect(extractExceptionDetailsMock).not.toHaveBeenCalled();
+
+        // Deterministic customer linkage: the email row itself is
+        // attributed to the resolved customer.
+        const emailsUpdateCall = supabaseMock
+            .getCalls("emails")
+            .find((call) => call.method === "update");
+        expect(emailsUpdateCall?.args[0]).toMatchObject({
+            customer_id: "cust-r5",
+        });
+
+        // Evidence/confidence flowed through to a persisted case
+        // transition and an auditable activity entry.
+        expect(logActivityMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                activityType: "collection_promise_acknowledged",
+                metadata: expect.objectContaining({
+                    promiseAmount: 75000,
+                    promiseCurrency: "INR",
+                    promiseDate: "2026-09-01",
+                    promiseConfidence: 0.92,
+                }),
+            })
+        );
+    });
+
+    it("dispute: dispatches exception extraction with category=dispute and persists the resulting evidence", async () => {
+        const { handleCollectionRelevantEmail } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        supabaseMock.queueResponse("customers", {
+            data: { id: "cust-r5b", company_name: "Beta Ltd", email: "beta@example.com" },
+            error: null,
+        });
+
+        const caseRow = baseCollectionCaseRow({
+            id: "case-r5b",
+            customer_id: "cust-r5b",
+        });
+        supabaseMock.queueResponse("collection_cases", { data: caseRow, error: null });
+
+        extractExceptionDetailsMock.mockResolvedValueOnce({
+            exceptionType: "invoice_incorrect",
+            detail: "Customer says the invoiced quantity is wrong.",
+            confidence: 0.85,
+        });
+
+        queueR5Assessment();
+        supabaseMock.queueResponse("collection_cases", { data: caseRow, error: null });
+        supabaseMock.queueResponse("collection_cases", { data: caseRow, error: null });
+        supabaseMock.queueResponse("customer_insights", {
+            data: { risk_level: "low" },
+            error: null,
+        });
+        supabaseMock.queueResponse("payment_decisions", {
+            data: null,
+            error: null,
+            count: 0,
+        });
+        supabaseMock.queueResponse("customers", {
+            data: { company_name: "Beta Ltd", contact_name: null, email: "beta@example.com" },
+            error: null,
+        });
+
+        getOriginalMessageMetadataMock.mockResolvedValueOnce({
+            rfcMessageId: "rfc-dispute@mail.gmail.com",
+        });
+        sendGmailReplyMock.mockResolvedValueOnce({
+            messageId: "msg-ack-dispute",
+            threadId: "thread-r5b",
+        });
+
+        supabaseMock.queueResponse("collection_cases", {
+            data: { ...caseRow, status: "disputed" },
+            error: null,
+        });
+
+        await handleCollectionRelevantEmail({
+            id: "email-r5-dispute",
+            subject: "Invoice amount is wrong",
+            text_body: "The quantity billed does not match what we received.",
+            from_email: "beta@example.com",
+            classification: "dispute",
+            classification_confidence: 0.88,
+            gmail_message_id: "inbound-r5-dispute",
+            gmail_thread_id: "thread-r5b",
+        });
+
+        expect(extractExceptionDetailsMock).toHaveBeenCalledWith({
+            subject: "Invoice amount is wrong",
+            textBody: "The quantity billed does not match what we received.",
+            category: "dispute",
+        });
+        expect(extractPromiseDetailsMock).not.toHaveBeenCalled();
+
+        expect(logActivityMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                activityType: "collection_dispute_opened",
+            })
+        );
+    });
+
+    it("ambiguous sender (multiple customers share the email): abstains — no attribution, no case query, no extraction", async () => {
+        const { handleCollectionRelevantEmail } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        supabaseMock.queueResponse("customers", {
+            data: null,
+            error: { code: "PGRST116", message: "multiple (or no) rows returned" },
+        });
+
+        await handleCollectionRelevantEmail({
+            id: "email-r5-ambiguous",
+            subject: "Payment promise",
+            text_body: "We will pay next week.",
+            from_email: "shared@example.com",
+            classification: "payment_promise",
+            classification_confidence: 0.9,
+            gmail_message_id: "inbound-r5-ambiguous",
+            gmail_thread_id: "thread-r5-ambiguous",
+        });
+
+        expect(extractPromiseDetailsMock).not.toHaveBeenCalled();
+        expect(extractExceptionDetailsMock).not.toHaveBeenCalled();
+        expect(
+            supabaseMock.getCalls("emails").some((call) => call.method === "update")
+        ).toBe(false);
+        expect(supabaseMock.getCalls("collection_cases")).toHaveLength(0);
+    });
+
+    it("customer resolved but has no active case: email is still attributed (context recorded), but no extraction or case evaluation runs", async () => {
+        const { handleCollectionRelevantEmail } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        supabaseMock.queueResponse("customers", {
+            data: { id: "cust-r5c", company_name: "Gamma Inc", email: "gamma@example.com" },
+            error: null,
+        });
+
+        // handleCollectionRelevantEmail's own getActiveCaseForCustomer() —
+        // no active case.
+        supabaseMock.queueResponse("collection_cases", { data: null, error: null });
+
+        await handleCollectionRelevantEmail({
+            id: "email-r5-noactivecase",
+            subject: "Quick question",
+            text_body: "What is the due date on this invoice?",
+            from_email: "gamma@example.com",
+            classification: "customer_inquiry",
+            classification_confidence: 0.7,
+            gmail_message_id: "inbound-r5-noactivecase",
+            gmail_thread_id: "thread-r5-noactivecase",
+        });
+
+        const emailsUpdateCall = supabaseMock
+            .getCalls("emails")
+            .find((call) => call.method === "update");
+        expect(emailsUpdateCall?.args[0]).toMatchObject({
+            customer_id: "cust-r5c",
+        });
+
+        expect(extractPromiseDetailsMock).not.toHaveBeenCalled();
+        expect(extractExceptionDetailsMock).not.toHaveBeenCalled();
+        // Never reaches evaluateOrOpenCollectionCase()'s own read.
+        expect(
+            supabaseMock.getCalls("customer_receivables_assessments")
+        ).toHaveLength(0);
     });
 });

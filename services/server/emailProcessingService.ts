@@ -3,6 +3,7 @@ import {
     updateEmailClassification,
     markEmailClassificationFailed,
     markEmailIgnored,
+    attributeEmailToCustomer,
 } from "@/services/server/emailService";
 import { classifyEmail } from "@/services/server/emailClassificationService";
 import { evaluateEmailRelevance } from "@/lib/emailRelevanceGate";
@@ -147,6 +148,35 @@ export async function processUnclassifiedEmails(
                         fromEmail: email.from_email,
                         receivedAt: email.received_at,
                     });
+
+                    // Deterministic customer linkage — mirrors
+                    // handleCollectionRelevantEmail's attribution for
+                    // every other collection-relevant classification.
+                    // matchPaymentEmail() resolves customerId (by exact
+                    // sender-email match) for BOTH "ready" and most
+                    // "needs_review" outcomes; only customer_not_found
+                    // leaves it null. Without this, a customer's "I
+                    // already paid" reply never appears in that
+                    // customer's collection case communication history
+                    // (getCollectionCaseDetail() joins on emails.
+                    // customer_id) even though a customer was
+                    // deterministically identified. Own try/catch so a
+                    // failure here can never block persistPaymentDecision()
+                    // below — that write remains the load-bearing one.
+                    if (matchResult.customerId) {
+                        try {
+                            await attributeEmailToCustomer(
+                                email.id,
+                                matchResult.customerId
+                            );
+                        } catch (attributionError) {
+                            console.error(
+                                "Email Attribution - payment_received failed for email:",
+                                email.id,
+                                attributionError
+                            );
+                        }
+                    }
 
                     // Structural match only — customer/invoice/amount
                     // are internally consistent, not bank-confirmed.
