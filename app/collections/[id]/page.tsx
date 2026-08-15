@@ -86,7 +86,9 @@ function communicationIcon(entry: CommunicationEntry) {
     if (
         entry.activityType === "collection_case_escalated" ||
         entry.activityType === "collection_dispute_opened" ||
+        entry.activityType === "collection_dispute_revised" ||
         entry.activityType === "collection_blocker_opened" ||
+        entry.activityType === "collection_blocker_revised" ||
         entry.activityType === "collection_promise_broken"
     ) {
         return TriangleAlert;
@@ -114,6 +116,7 @@ function communicationTitle(entry: CommunicationEntry): string {
     const labels: Record<string, string> = {
         collection_case_opened: "Collection case opened",
         collection_blocker_opened: "Blocker reported",
+        collection_blocker_revised: "Blocker report updated",
         collection_exception_resolved: "Exception resolved",
         collection_case_escalated: "Case escalated",
         collection_case_resolved: "Case resolved",

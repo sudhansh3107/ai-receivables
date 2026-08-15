@@ -508,6 +508,22 @@ export async function evaluateOrOpenCollectionCase(
             activityType: "collection_blocker_opened",
             message: "Blocker reported; chasing paused",
         });
+    } else if (isBlockerRevised(result)) {
+        // Responsibility #7 — a NEW blocker report while one was already
+        // open. Still a silent "wait" (no acknowledgment email, same as
+        // a fresh blocker), but must not be indistinguishable from — or
+        // silently absent next to — the original opening event.
+        await logActivity({
+            customerId,
+            activityType: ActivityTypes.COLLECTION_BLOCKER_REVISED,
+            description: result.reason,
+            metadata: { caseId: claimed.id, ...result.evidence },
+        });
+
+        await logEmployeeActivity({
+            activityType: "collection_blocker_revised",
+            message: "Blocker report updated",
+        });
     }
     // Every other 'wait' decision is deliberately not logged to
     // activity_log — see this file's design notes: logging every no-op
@@ -680,7 +696,19 @@ export function selectOutreachActivityType(
     }
 
     if (result.decision === "acknowledge_exception") {
-        return ActivityTypes.COLLECTION_DISPUTE_OPENED;
+        // Responsibility #7 — distinguishes a dispute REVISING an
+        // already-open exception (same category, or superseding an
+        // open blocker) from a genuinely fresh dispute
+        // (outreachContext.wasRevision, set by the T6 branch of
+        // applyLatestResponse()). Only "dispute" ever reaches this
+        // decision (a blocker's acceptance never sends an
+        // acknowledgment — see isBlockerRevised() below for how a
+        // blocker revision is detected instead), so no category check
+        // is needed here.
+        return result.outreachContext?.kind === "acknowledge_exception" &&
+            result.outreachContext.wasRevision
+            ? ActivityTypes.COLLECTION_DISPUTE_REVISED
+            : ActivityTypes.COLLECTION_DISPUTE_OPENED;
     }
 
     if (result.decision === "follow_up" && result.outreachContext?.kind === "follow_up") {
@@ -717,6 +745,25 @@ export function isNewBlockerOpened(
         result.decision === "wait" &&
         result.newStatus === "payment_blocked" &&
         previousStatus !== "payment_blocked"
+    );
+}
+
+// Pure — no I/O. Responsibility #7: true when a blocker acceptance (T9)
+// revised an already-open blocker exception rather than opening a fresh
+// one — keyed directly off evidence.wasRevision (set by the T9 branch of
+// applyLatestResponse()), not status-transition inference, since a
+// blocker's own acceptance never produces an outreachContext to carry
+// the signal the way a dispute's does. isNewBlockerOpened() and this
+// function are mutually exclusive by construction (wasRevision can only
+// be true when an exception was already open, i.e.
+// previousStatus==="payment_blocked").
+export function isBlockerRevised(
+    result: Pick<CollectionDecisionResult, "decision" | "newStatus" | "evidence">
+): boolean {
+    return (
+        result.decision === "wait" &&
+        result.newStatus === "payment_blocked" &&
+        result.evidence.wasRevision === true
     );
 }
 
@@ -763,6 +810,9 @@ async function logOutreachActivity(
         const wasRevision =
             result.outreachContext?.kind === "acknowledge_promise" &&
             result.outreachContext.wasRevision;
+        const wasDisputeRevision =
+            result.outreachContext?.kind === "acknowledge_exception" &&
+            result.outreachContext.wasRevision;
 
         await logEmployeeActivity({
             activityType: `collection_${result.decision}`,
@@ -781,7 +831,9 @@ async function logOutreachActivity(
                           ? wasRevision
                               ? "Payment promise revised"
                               : "Payment promise acknowledged"
-                          : "Dispute acknowledged, routed for review",
+                          : wasDisputeRevision
+                            ? "Dispute report updated, routed for review"
+                            : "Dispute acknowledged, routed for review",
         });
     } catch (activityError) {
         // The email was already sent successfully — a logging failure

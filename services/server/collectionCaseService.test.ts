@@ -274,6 +274,118 @@ describe("resolveCollectionCase — idempotent, callable even while escalated", 
     });
 });
 
+describe("resolveExceptionManually — Responsibility #7 human action for a non-escalated dispute/blocker", () => {
+    beforeEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it("clears the exception (status -> resolved) and returns the case to awaiting_response when it has prior outreach", async () => {
+        const { resolveExceptionManually } = await import(
+            "./collectionCaseService"
+        );
+
+        // Fetch (pre-check).
+        supabaseMock.queueResponse({
+            data: {
+                id: "case-1",
+                status: "disputed",
+                outreach_count: 2,
+                exception_category: "dispute",
+                exception_type: "amount_disputed",
+            },
+            error: null,
+        });
+        // Conditional UPDATE.
+        supabaseMock.queueResponse({
+            data: {
+                id: "case-1",
+                status: "awaiting_response",
+                exception_status: "resolved",
+                exception_category: "dispute",
+                exception_type: "amount_disputed",
+            },
+            error: null,
+        });
+
+        const result = await resolveExceptionManually("case-1");
+
+        expect(result.status).toBe("awaiting_response");
+        expect(result.exception_status).toBe("resolved");
+        // Category/type are deliberately preserved — WHAT was resolved
+        // stays visible.
+        expect(result.exception_category).toBe("dispute");
+        expect(result.exception_type).toBe("amount_disputed");
+    });
+
+    it("returns the case to 'open' (not awaiting_response) when there was never any prior outreach", async () => {
+        const { resolveExceptionManually } = await import(
+            "./collectionCaseService"
+        );
+
+        supabaseMock.queueResponse({
+            data: {
+                id: "case-2",
+                status: "payment_blocked",
+                outreach_count: 0,
+                exception_category: "blocker",
+            },
+            error: null,
+        });
+        supabaseMock.queueResponse({
+            data: { id: "case-2", status: "open", exception_status: "resolved" },
+            error: null,
+        });
+
+        const result = await resolveExceptionManually("case-2");
+
+        expect(result.status).toBe("open");
+    });
+
+    it("rejects a case that is neither disputed nor payment_blocked (e.g. escalated — use markCollectionCaseResolvedManually/resumeCollectionCaseFromEscalation instead)", async () => {
+        const { resolveExceptionManually } = await import(
+            "./collectionCaseService"
+        );
+
+        supabaseMock.queueResponse({
+            data: { id: "case-3", status: "escalated", outreach_count: 1 },
+            error: null,
+        });
+
+        await expect(resolveExceptionManually("case-3")).rejects.toThrow(
+            /not "disputed" or "payment_blocked"/
+        );
+    });
+
+    it("throws when the case does not exist", async () => {
+        const { resolveExceptionManually } = await import(
+            "./collectionCaseService"
+        );
+
+        supabaseMock.queueResponse({ data: null, error: null });
+
+        await expect(resolveExceptionManually("missing-case")).rejects.toThrow(
+            /not found/
+        );
+    });
+
+    it("throws a conflict error when a concurrent transition already moved the case out of disputed/payment_blocked", async () => {
+        const { resolveExceptionManually, CaseTransitionConflictError } =
+            await import("./collectionCaseService");
+
+        supabaseMock.queueResponse({
+            data: { id: "case-4", status: "disputed", outreach_count: 1 },
+            error: null,
+        });
+        // The conditional UPDATE matches zero rows — status moved
+        // concurrently since the fetch.
+        supabaseMock.queueResponse({ data: null, error: null });
+
+        await expect(
+            resolveExceptionManually("case-4")
+        ).rejects.toBeInstanceOf(CaseTransitionConflictError);
+    });
+});
+
 describe("deferCollectionCaseEscalation — 'keep monitoring'", () => {
     beforeEach(() => {
         vi.restoreAllMocks();

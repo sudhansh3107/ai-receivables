@@ -98,6 +98,15 @@ export const ActivityTypes = {
     COLLECTION_PROMISE_PARTIALLY_FULFILLED: "collection_promise_partially_fulfilled",
     COLLECTION_PROMISE_REVISED: "collection_promise_revised",
 
+    // Responsibility #7 (Handle Disputes / Blockers / Exceptions). See
+    // collectionDecisionEngine.ts's T6/T9 branches for exactly when
+    // these fire (a new dispute/blocker report while one of the same
+    // category is already open — including a dispute superseding an
+    // already-open blocker, a genuine category change) vs. a fresh
+    // COLLECTION_DISPUTE_OPENED/COLLECTION_BLOCKER_OPENED.
+    COLLECTION_DISPUTE_REVISED: "collection_dispute_revised",
+    COLLECTION_BLOCKER_REVISED: "collection_blocker_revised",
+
 } as const;
 
 export type ActivityType =

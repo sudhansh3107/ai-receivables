@@ -31,6 +31,7 @@ function makeCaseState(overrides: Partial<CaseState> = {}): CaseState {
         exceptionType: null,
         exceptionStatus: null,
         exceptionDetail: null,
+        exceptionConfidence: null,
         exceptionOpenedAt: null,
         ...overrides,
     };
@@ -487,6 +488,157 @@ describe("T4 — payment_promise", () => {
 
         expect(result.newStatus).toBe("promise_to_pay");
         expect(result.fieldPatch.exceptionStatus).toBe("resolved");
+    });
+});
+
+describe("Responsibility #7 — dispute takes precedence over a payment_promise", () => {
+    it("a promise arriving while disputed is never accepted into promise_to_pay, and the dispute is never cleared", () => {
+        const latestResponse: LatestResponse = {
+            emailId: "email-promise-during-dispute",
+            classification: "payment_promise",
+            classificationConfidence: 0.95,
+            receivedAt: NOW,
+            promiseExtraction: {
+                intentClear: true,
+                amountStated: true,
+                amount: 50000,
+                currency: "INR",
+                promiseDate: "2026-09-01",
+                confidence: 0.95,
+            },
+        };
+
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "disputed",
+                nextEvaluationAt: new Date("2026-08-25T00:00:00"), // not yet due
+                exceptionCategory: "dispute",
+                exceptionType: "amount_disputed",
+                exceptionStatus: "open",
+                exceptionDetail: "Customer says the amount is wrong.",
+                exceptionOpenedAt: new Date("2026-08-15T00:00:00"),
+            }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        // Status stays disputed — never promise_to_pay.
+        expect(result.newStatus).toBe("disputed");
+        expect(result.decision).not.toBe("acknowledge_promise");
+        // No promise_* field is ever written.
+        expect(result.fieldPatch.promiseAmount).toBeUndefined();
+        expect(result.fieldPatch.promiseDate).toBeUndefined();
+        expect(result.fieldPatch.promiseStatus).toBeUndefined();
+        // The dispute is never cleared by the promise.
+        expect(result.fieldPatch.exceptionStatus).toBeUndefined();
+    });
+
+    it("falls through to Step 2's disputed cascade (still silently waiting, since re-evaluation isn't due) rather than short-circuiting", () => {
+        const latestResponse: LatestResponse = {
+            emailId: "email-promise-during-dispute-2",
+            classification: "payment_promise",
+            classificationConfidence: 0.95,
+            receivedAt: NOW,
+            promiseExtraction: {
+                intentClear: true,
+                amountStated: true,
+                amount: 50000,
+                currency: "INR",
+                promiseDate: "2026-09-01",
+                confidence: 0.95,
+            },
+        };
+
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "disputed",
+                nextEvaluationAt: new Date("2026-08-25T00:00:00"),
+                exceptionCategory: "dispute",
+                exceptionStatus: "open",
+            }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.decision).toBe("wait");
+        expect(result.outreachContext).toBeUndefined();
+    });
+
+    it("a promise arriving while payment_blocked (NOT disputed) is unaffected — existing behavior preserved", () => {
+        const latestResponse: LatestResponse = {
+            emailId: "email-promise-during-blocker",
+            classification: "payment_promise",
+            classificationConfidence: 0.95,
+            receivedAt: NOW,
+            promiseExtraction: {
+                intentClear: true,
+                amountStated: true,
+                amount: 5000,
+                currency: "INR",
+                promiseDate: "2026-08-25",
+                confidence: 0.9,
+            },
+        };
+
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "payment_blocked",
+                exceptionCategory: "blocker",
+                exceptionStatus: "open",
+            }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.newStatus).toBe("promise_to_pay");
+        expect(result.fieldPatch.exceptionStatus).toBe("resolved");
+    });
+
+    it("once the dispute is resolved (status no longer 'disputed'), a later promise is processed normally", () => {
+        const latestResponse: LatestResponse = {
+            emailId: "email-promise-after-dispute-resolved",
+            classification: "payment_promise",
+            classificationConfidence: 0.95,
+            receivedAt: NOW,
+            promiseExtraction: {
+                intentClear: true,
+                amountStated: true,
+                amount: 25000,
+                currency: "INR",
+                promiseDate: "2026-09-01",
+                confidence: 0.9,
+            },
+        };
+
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "awaiting_response", // resolveExceptionManually()'s destination
+                exceptionCategory: "dispute",
+                exceptionStatus: "resolved",
+            }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse,
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.decision).toBe("acknowledge_promise");
+        expect(result.newStatus).toBe("promise_to_pay");
+        expect(result.fieldPatch.promiseAmount).toBe(25000);
     });
 });
 
@@ -965,6 +1117,150 @@ describe("T6/T7/T7b — dispute never auto-escalates", () => {
     });
 });
 
+describe("Responsibility #7 — dispute confidence and revisions", () => {
+    it("persists exception_confidence from the extraction on a fresh dispute", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({ status: "awaiting_response" }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: {
+                emailId: "email-dispute-confidence",
+                classification: "dispute",
+                classificationConfidence: 0.9,
+                receivedAt: NOW,
+                exceptionExtraction: {
+                    exceptionType: "amount_disputed",
+                    detail: "Customer says they were overcharged.",
+                    confidence: 0.87,
+                },
+            },
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.fieldPatch.exceptionConfidence).toBe(0.87);
+        expect(result.evidence.exceptionConfidence).toBe(0.87);
+        expect(result.fieldPatch.exceptionOpenedAt).toEqual(NOW);
+        expect(result.evidence.wasRevision).toBe(false);
+        expect(result.evidence.previousException).toBeUndefined();
+        expect(result.outreachContext).toMatchObject({
+            kind: "acknowledge_exception",
+            category: "dispute",
+            wasRevision: false,
+        });
+    });
+
+    it("a second dispute report while one is already open (same category) is a REVISION: preserves the original opened_at and the prior report in evidence", () => {
+        const originalOpenedAt = new Date("2026-08-10T00:00:00");
+
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "disputed",
+                nextEvaluationAt: new Date("2026-08-25T00:00:00"),
+                exceptionCategory: "dispute",
+                exceptionType: "invoice_incorrect",
+                exceptionStatus: "open",
+                exceptionDetail: "Original complaint: wrong quantity billed.",
+                exceptionConfidence: 0.75,
+                exceptionOpenedAt: originalOpenedAt,
+            }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: {
+                emailId: "email-dispute-revision",
+                classification: "dispute",
+                classificationConfidence: 0.9,
+                receivedAt: NOW,
+                exceptionExtraction: {
+                    exceptionType: "amount_disputed",
+                    detail: "Now says the total amount is also wrong.",
+                    confidence: 0.92,
+                },
+            },
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.decision).toBe("acknowledge_exception");
+        expect(result.newStatus).toBe("disputed");
+        // The NEW report's facts win going forward...
+        expect(result.fieldPatch.exceptionType).toBe("amount_disputed");
+        expect(result.fieldPatch.exceptionDetail).toBe(
+            "Now says the total amount is also wrong."
+        );
+        expect(result.fieldPatch.exceptionConfidence).toBe(0.92);
+        // ...but opened_at is NEVER overwritten for a same-category
+        // revision (absent from the patch entirely, so patchToRow()
+        // never touches the column).
+        expect(result.fieldPatch.exceptionOpenedAt).toBeUndefined();
+        // The prior report is preserved, not silently lost.
+        expect(result.evidence.wasRevision).toBe(true);
+        expect(result.evidence.previousException).toEqual({
+            category: "dispute",
+            type: "invoice_incorrect",
+            detail: "Original complaint: wrong quantity billed.",
+            confidence: 0.75,
+            openedAt: originalOpenedAt.toISOString(),
+        });
+        expect(result.outreachContext).toMatchObject({
+            kind: "acknowledge_exception",
+            wasRevision: true,
+        });
+    });
+
+    it("a dispute superseding an already-open BLOCKER is a category change: preserves the blocker in evidence but starts a fresh opened_at (not a same-category revision)", () => {
+        const blockerOpenedAt = new Date("2026-08-05T00:00:00");
+
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "payment_blocked",
+                exceptionCategory: "blocker",
+                exceptionType: "po_issue",
+                exceptionStatus: "open",
+                exceptionDetail: "Waiting on internal PO.",
+                exceptionConfidence: 0.85,
+                exceptionOpenedAt: blockerOpenedAt,
+            }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: {
+                emailId: "email-category-change",
+                classification: "dispute",
+                classificationConfidence: 0.9,
+                receivedAt: NOW,
+                exceptionExtraction: {
+                    exceptionType: "goods_not_received",
+                    detail: "Actually, we never received the goods at all.",
+                    confidence: 0.88,
+                },
+            },
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.newStatus).toBe("disputed");
+        expect(result.fieldPatch.exceptionCategory).toBe("dispute");
+        expect(result.fieldPatch.exceptionType).toBe("goods_not_received");
+        // A category change is NOT a same-category revision — it starts
+        // its own clock, unlike the dispute->dispute case above.
+        expect(result.fieldPatch.exceptionOpenedAt).toEqual(NOW);
+        // But the superseded blocker is still traceable in evidence —
+        // "genuinely different" is handled deterministically, not by
+        // silently discarding what was open before.
+        expect(result.evidence.wasRevision).toBe(false);
+        expect(result.evidence.previousException).toEqual({
+            category: "blocker",
+            type: "po_issue",
+            detail: "Waiting on internal PO.",
+            confidence: 0.85,
+            openedAt: blockerOpenedAt.toISOString(),
+        });
+    });
+});
+
 describe("T9/T10/T11 — payment_blocker", () => {
     it("accepts a blocker at/above the classification confidence floor", () => {
         const latestResponse: LatestResponse = {
@@ -1073,6 +1369,117 @@ describe("T9/T10/T11 — payment_blocker", () => {
         });
 
         expect(result.decision).toBe("wait");
+    });
+});
+
+describe("Responsibility #7 — blocker confidence and revisions", () => {
+    it("persists exception_confidence from the extraction on a fresh blocker", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({ status: "awaiting_response" }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: {
+                emailId: "email-blocker-confidence",
+                classification: "payment_blocker",
+                classificationConfidence: 0.85,
+                receivedAt: NOW,
+                exceptionExtraction: {
+                    exceptionType: "approval_pending",
+                    detail: "Waiting on internal sign-off.",
+                    confidence: 0.82,
+                },
+            },
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.fieldPatch.exceptionConfidence).toBe(0.82);
+        expect(result.evidence.exceptionConfidence).toBe(0.82);
+        expect(result.fieldPatch.exceptionOpenedAt).toEqual(NOW);
+        expect(result.evidence.wasRevision).toBe(false);
+        expect(result.evidence.previousException).toBeUndefined();
+    });
+
+    it("a second blocker report while one is already open is a REVISION: preserves the original opened_at and the prior report in evidence", () => {
+        const originalOpenedAt = new Date("2026-08-10T00:00:00");
+
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "payment_blocked",
+                nextEvaluationAt: new Date("2026-08-25T00:00:00"),
+                exceptionCategory: "blocker",
+                exceptionType: "po_issue",
+                exceptionStatus: "open",
+                exceptionDetail: "Waiting on PO approval.",
+                exceptionConfidence: 0.8,
+                exceptionOpenedAt: originalOpenedAt,
+            }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: {
+                emailId: "email-blocker-revision",
+                classification: "payment_blocker",
+                classificationConfidence: 0.9,
+                receivedAt: NOW,
+                exceptionExtraction: {
+                    exceptionType: "documentation_issue",
+                    detail: "PO cleared, now missing a compliance document.",
+                    confidence: 0.86,
+                },
+            },
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.decision).toBe("wait");
+        expect(result.newStatus).toBe("payment_blocked");
+        expect(result.fieldPatch.exceptionType).toBe("documentation_issue");
+        expect(result.fieldPatch.exceptionConfidence).toBe(0.86);
+        // opened_at never overwritten for a same-category revision.
+        expect(result.fieldPatch.exceptionOpenedAt).toBeUndefined();
+        expect(result.evidence.wasRevision).toBe(true);
+        expect(result.evidence.previousException).toEqual({
+            category: "blocker",
+            type: "po_issue",
+            detail: "Waiting on PO approval.",
+            confidence: 0.8,
+            openedAt: originalOpenedAt.toISOString(),
+        });
+    });
+
+    it("a blocker can never revise an open DISPUTE (dispute precedence, unchanged) — no exception fields are touched at all", () => {
+        const result = evaluateCollectionCase({
+            caseState: makeCaseState({
+                status: "disputed",
+                nextEvaluationAt: new Date("2026-08-25T00:00:00"),
+                exceptionCategory: "dispute",
+                exceptionType: "invoice_incorrect",
+                exceptionStatus: "open",
+            }),
+            assessment: makeAssessment(),
+            insight,
+            pendingPaymentDecision: false,
+            latestResponse: {
+                emailId: "email-blocker-vs-dispute",
+                classification: "payment_blocker",
+                classificationConfidence: 0.95,
+                receivedAt: NOW,
+                exceptionExtraction: {
+                    exceptionType: "po_issue",
+                    detail: "Also waiting on a PO.",
+                    confidence: 0.9,
+                },
+            },
+            now: NOW,
+            triggeredByPayment: false,
+        });
+
+        expect(result.newStatus).toBe("disputed");
+        expect(result.fieldPatch.exceptionCategory).toBeUndefined();
+        expect(result.fieldPatch.exceptionType).toBeUndefined();
+        expect(result.fieldPatch.exceptionConfidence).toBeUndefined();
     });
 });
 

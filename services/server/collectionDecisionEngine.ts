@@ -139,6 +139,12 @@ export interface CaseState {
     exceptionType: ExceptionType | null;
     exceptionStatus: ExceptionStatus | null;
     exceptionDetail: string | null;
+    // Responsibility #7 — confidence the LLM assigned to exceptionType
+    // when this exception was last opened or revised. Mirrors
+    // promiseConfidence exactly. Never an acceptance gate (a dispute is
+    // accepted unconditionally; a blocker's gate is the EMAIL
+    // classification confidence, not this) — evidence only.
+    exceptionConfidence: number | null;
     exceptionOpenedAt: Date | null;
 }
 
@@ -252,6 +258,7 @@ export interface CaseFieldPatch {
     exceptionType?: ExceptionType | null;
     exceptionStatus?: ExceptionStatus | null;
     exceptionDetail?: string | null;
+    exceptionConfidence?: number | null;
     exceptionSourceEmailId?: string | null;
     exceptionOpenedAt?: Date | null;
 
@@ -297,7 +304,21 @@ export type OutreachContext =
           promiseOutcome?: "fulfilled" | "partial" | "broken";
       }
     | { kind: "check_in" }
-    | { kind: "acknowledge_exception"; category: ExceptionCategory }
+    | {
+          kind: "acknowledge_exception";
+          category: ExceptionCategory;
+          // Responsibility #7 — true when this dispute overwrote an
+          // already-open exception of the SAME category (dispute ->
+          // dispute) or superseded an already-open BLOCKER (a genuine
+          // category change, still logged distinctly from a fresh
+          // dispute). False for a genuinely fresh dispute with no prior
+          // open exception. A blocker's own acceptance never produces
+          // this OutreachContext at all (it never sends an
+          // acknowledgment email) — see isBlockerRevised() in
+          // collectionCaseOrchestrationService.ts for how a blocker
+          // revision is detected instead.
+          wasRevision: boolean;
+      }
     | {
           kind: "acknowledge_promise";
           amount: number | null;
@@ -487,6 +508,29 @@ function applyLatestResponse(
 
     // T4 — payment_promise, accepted or evidence-only.
     if (classification === "payment_promise") {
+        // Responsibility #7 — dispute precedence over a promise: an
+        // ACTIVE dispute is never displaced by a payment_promise. The
+        // promise is never accepted into promise_to_pay while disputed
+        // — it is preserved as inbound evidence/context only (the email
+        // itself remains fully visible in case history via the existing
+        // customer_id-scoped communication-history join; nothing here
+        // needs to duplicate that). The dispute stays authoritative
+        // until resolved via resolveExceptionManually() or the account
+        // fully clearing (the universal resolution gate, Step 0) — at
+        // which point a LATER promise is processed normally through
+        // this same branch, since caseState.status will no longer be
+        // "disputed". This intentionally does NOT extend to
+        // status==="payment_blocked" — a promise arriving mid-blocker is
+        // unchanged, existing behavior (see wasBlocked below).
+        if (caseState.status === "disputed") {
+            return {
+                result: null,
+                evidencePatch: {
+                    unansweredOutreachCount: 0,
+                },
+            };
+        }
+
         const extraction = latestResponse.promiseExtraction;
 
         const accepted =
@@ -591,14 +635,40 @@ function applyLatestResponse(
     }
 
     // T6 — dispute always overwrites (dispute precedence rule) and is
-    // accepted unconditionally.
+    // accepted unconditionally. Responsibility #7: distinguishes a
+    // same-category REVISION (a dispute already open) and a category
+    // CHANGE (a blocker already open, now superseded — the only other
+    // possibility, since T9 below refuses to accept a blocker while
+    // status==="disputed", so a dispute can never itself already be open
+    // underneath another dispute check here — exceptionStatus==="open"
+    // with category==="dispute" IS the revision case) from a genuinely
+    // fresh dispute — in every case the dispute still wins and still
+    // sends exactly one acknowledgment, only the audit trail and
+    // exception_opened_at differ.
     if (classification === "dispute") {
         const extraction = latestResponse.exceptionExtraction;
         const exceptionType: ExceptionType = extraction?.exceptionType ?? "other";
         const detail = extraction?.detail ?? "";
+        const confidence = extraction?.confidence ?? null;
 
-        const reason =
-            "Customer disputes the debt. Proactive collection pressure paused pending review.";
+        const hasOpenException = caseState.exceptionStatus === "open";
+        const isRevision = hasOpenException && caseState.exceptionCategory === "dispute";
+
+        const previousException = hasOpenException
+            ? {
+                  category: caseState.exceptionCategory,
+                  type: caseState.exceptionType,
+                  detail: caseState.exceptionDetail,
+                  confidence: caseState.exceptionConfidence,
+                  openedAt: caseState.exceptionOpenedAt
+                      ? caseState.exceptionOpenedAt.toISOString()
+                      : null,
+              }
+            : null;
+
+        const reason = isRevision
+            ? "Customer sent an updated dispute report. Proactive collection pressure remains paused pending review."
+            : "Customer disputes the debt. Proactive collection pressure paused pending review.";
 
         const nextEvaluationAt = addDays(
             now,
@@ -615,6 +685,9 @@ function applyLatestResponse(
                     ...baseEvidence(caseState, assessment, insight),
                     exceptionCategory: "dispute",
                     exceptionType,
+                    exceptionConfidence: confidence,
+                    wasRevision: isRevision,
+                    ...(previousException ? { previousException } : {}),
                 },
                 nextEvaluationAt,
                 fieldPatch: {
@@ -631,12 +704,19 @@ function applyLatestResponse(
                     exceptionType,
                     exceptionStatus: "open",
                     exceptionDetail: detail,
+                    exceptionConfidence: confidence,
                     exceptionSourceEmailId: latestResponse.emailId,
-                    exceptionOpenedAt: now,
+                    // A same-category revision keeps the ORIGINAL
+                    // opened_at (omitted here — patchToRow() never
+                    // touches a column that's absent from the patch). A
+                    // category change or a genuinely fresh dispute
+                    // starts its own clock.
+                    ...(isRevision ? {} : { exceptionOpenedAt: now }),
                 },
                 outreachContext: {
                     kind: "acknowledge_exception",
                     category: "dispute",
+                    wasRevision: isRevision,
                 },
             },
             evidencePatch: {},
@@ -663,9 +743,32 @@ function applyLatestResponse(
             const exceptionType: ExceptionType =
                 extraction?.exceptionType ?? "other";
             const detail = extraction?.detail ?? "";
+            const confidence = extraction?.confidence ?? null;
 
-            const reason =
-                "Customer reported an internal blocker to payment. Chasing paused; a check-in is scheduled instead.";
+            // Responsibility #7 — reachable only when NOT disputed
+            // (guarded above), so an already-open exception here can
+            // only ever be a blocker itself: this is always a
+            // same-category revision when one exists, never a category
+            // change (a blocker can never supersede an open dispute).
+            const isRevision =
+                caseState.exceptionStatus === "open" &&
+                caseState.exceptionCategory === "blocker";
+
+            const previousException = isRevision
+                ? {
+                      category: caseState.exceptionCategory,
+                      type: caseState.exceptionType,
+                      detail: caseState.exceptionDetail,
+                      confidence: caseState.exceptionConfidence,
+                      openedAt: caseState.exceptionOpenedAt
+                          ? caseState.exceptionOpenedAt.toISOString()
+                          : null,
+                  }
+                : null;
+
+            const reason = isRevision
+                ? "Customer sent an updated blocker report. Chasing remains paused; a check-in is scheduled instead."
+                : "Customer reported an internal blocker to payment. Chasing paused; a check-in is scheduled instead.";
 
             const nextEvaluationAt = addDays(
                 now,
@@ -682,6 +785,9 @@ function applyLatestResponse(
                         ...baseEvidence(caseState, assessment, insight),
                         exceptionCategory: "blocker",
                         exceptionType,
+                        exceptionConfidence: confidence,
+                        wasRevision: isRevision,
+                        ...(previousException ? { previousException } : {}),
                     },
                     nextEvaluationAt,
                     fieldPatch: {
@@ -698,8 +804,12 @@ function applyLatestResponse(
                         exceptionType,
                         exceptionStatus: "open",
                         exceptionDetail: detail,
+                        exceptionConfidence: confidence,
                         exceptionSourceEmailId: latestResponse.emailId,
-                        exceptionOpenedAt: now,
+                        // Same-category revision keeps the ORIGINAL
+                        // opened_at; a genuinely fresh blocker starts its
+                        // own clock.
+                        ...(isRevision ? {} : { exceptionOpenedAt: now }),
                     },
                 },
                 evidencePatch: {},

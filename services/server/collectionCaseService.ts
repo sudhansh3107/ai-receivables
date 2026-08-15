@@ -49,6 +49,7 @@ export interface CollectionCaseRow {
     exception_type: string | null;
     exception_status: string | null;
     exception_detail: string | null;
+    exception_confidence: number | string | null;
     exception_source_email_id: string | null;
     exception_opened_at: string | null;
     escalated_at: string | null;
@@ -101,6 +102,10 @@ export function toCaseState(row: CollectionCaseRow): CaseState {
         exceptionStatus:
             row.exception_status as CaseState["exceptionStatus"],
         exceptionDetail: row.exception_detail,
+        exceptionConfidence:
+            row.exception_confidence == null
+                ? null
+                : Number(row.exception_confidence),
         exceptionOpenedAt: row.exception_opened_at
             ? new Date(row.exception_opened_at)
             : null,
@@ -146,6 +151,7 @@ function patchToRow(patch: CaseFieldPatch): Record<string, unknown> {
     if (patch.exceptionType !== undefined) row.exception_type = patch.exceptionType;
     if (patch.exceptionStatus !== undefined) row.exception_status = patch.exceptionStatus;
     if (patch.exceptionDetail !== undefined) row.exception_detail = patch.exceptionDetail;
+    if (patch.exceptionConfidence !== undefined) row.exception_confidence = patch.exceptionConfidence;
     if (patch.exceptionSourceEmailId !== undefined) row.exception_source_email_id = patch.exceptionSourceEmailId;
     if (patch.exceptionOpenedAt !== undefined) row.exception_opened_at = patch.exceptionOpenedAt ? patch.exceptionOpenedAt.toISOString() : null;
 
@@ -569,6 +575,71 @@ export async function resumeCollectionCaseFromEscalation(
 
     if (!data) {
         throw new CaseTransitionConflictError(caseId, "escalated");
+    }
+
+    return data as CollectionCaseRow;
+}
+
+// Responsibility #7 — a human clearing a DISPUTE or PAYMENT_BLOCKER
+// exception that never escalated (the only prior human action,
+// markCollectionCaseResolvedManually() below, requires status=
+// 'escalated' — a non-escalated dispute/blocker had NO human action
+// available at all before this). Deliberately distinct from resolving
+// the whole CASE: this only clears the exception and returns the case
+// to normal chasing, it never closes the case (mirrors
+// resumeCollectionCaseFromEscalation()'s destinationStatus logic
+// exactly, since both answer the same question — "where does this case
+// go once whatever was pausing it is cleared" — for two different
+// pause reasons).
+//
+// exception_category/type/detail/confidence/source_email_id/opened_at
+// are deliberately left untouched — only exception_status flips to
+// 'resolved' — exactly like resumeCollectionCaseFromEscalation()'s own
+// exception_status handling: a human reviewing this case later must
+// still be able to see WHAT the exception was, not just that it's gone.
+export async function resolveExceptionManually(
+    caseId: string
+): Promise<CollectionCaseRow> {
+    const now = new Date().toISOString();
+
+    const { data: existing, error: fetchError } = await supabase
+        .from("collection_cases")
+        .select("*")
+        .eq("id", caseId)
+        .maybeSingle();
+
+    if (fetchError) throw fetchError;
+
+    if (!existing) {
+        throw new Error(`Collection case ${caseId} not found`);
+    }
+
+    if (existing.status !== "disputed" && existing.status !== "payment_blocked") {
+        throw new Error(
+            `Collection case ${caseId} has no active exception to resolve: status is "${existing.status}", not "disputed" or "payment_blocked"`
+        );
+    }
+
+    const destinationStatus: CaseStatus =
+        existing.outreach_count > 0 ? "awaiting_response" : "open";
+
+    const { data, error } = await supabase
+        .from("collection_cases")
+        .update({
+            status: destinationStatus,
+            exception_status: "resolved",
+            next_evaluation_at: now,
+            updated_at: now,
+        })
+        .eq("id", caseId)
+        .in("status", ["disputed", "payment_blocked"])
+        .select()
+        .maybeSingle();
+
+    if (error) throw error;
+
+    if (!data) {
+        throw new CaseTransitionConflictError(caseId, existing.status);
     }
 
     return data as CollectionCaseRow;

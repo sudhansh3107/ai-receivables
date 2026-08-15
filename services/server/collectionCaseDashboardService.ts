@@ -143,6 +143,12 @@ export interface CollectionCaseDetail extends CollectionCaseSummary {
     promiseCurrency: string | null;
     exceptionType: string | null;
     exceptionDetail: string | null;
+    // Responsibility #7 — surfaced for parity with the underlying data
+    // (mirrors promise_confidence's own column, which is likewise
+    // fetched but not yet rendered anywhere in the UI); not wired into
+    // app/collections/[id]/page.tsx, matching that existing precedent
+    // rather than adding a new display element for one field.
+    exceptionConfidence: number | null;
     escalationReason: string | null;
     communicationHistory: CommunicationEntry[];
 }
@@ -158,6 +164,7 @@ interface CollectionCaseDetailRow extends CollectionCaseSummaryRow {
     promise_currency: string | null;
     exception_type: string | null;
     exception_detail: string | null;
+    exception_confidence: number | string | null;
     escalation_reason: string | null;
     invoices: { invoice_number: string } | null;
 }
@@ -185,6 +192,9 @@ const COLLECTION_ACTIVITY_TYPES: string[] = [
     ActivityTypes.COLLECTION_PROMISE_REVISED,
     ActivityTypes.COLLECTION_DISPUTE_OPENED,
     ActivityTypes.COLLECTION_BLOCKER_OPENED,
+    // Responsibility #7 (Handle Disputes / Blockers / Exceptions).
+    ActivityTypes.COLLECTION_DISPUTE_REVISED,
+    ActivityTypes.COLLECTION_BLOCKER_REVISED,
     ActivityTypes.COLLECTION_EXCEPTION_RESOLVED,
     ActivityTypes.COLLECTION_CASE_ESCALATED,
     ActivityTypes.COLLECTION_CASE_RESOLVED,
@@ -211,7 +221,7 @@ export async function getCollectionCaseDetail(
             ${SUMMARY_SCALAR_COLUMNS},
             triggering_invoice_id,
             promise_amount, promise_currency,
-            exception_type, exception_detail, escalation_reason,
+            exception_type, exception_detail, exception_confidence, escalation_reason,
             customers ( company_name, contact_name, email ),
             invoices ( invoice_number )
         `
@@ -298,6 +308,10 @@ export async function getCollectionCaseDetail(
         promiseCurrency: detailRow.promise_currency,
         exceptionType: detailRow.exception_type,
         exceptionDetail: detailRow.exception_detail,
+        exceptionConfidence:
+            detailRow.exception_confidence == null
+                ? null
+                : Number(detailRow.exception_confidence),
         escalationReason: detailRow.escalation_reason,
         communicationHistory,
     };

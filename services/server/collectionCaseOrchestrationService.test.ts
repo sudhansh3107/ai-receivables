@@ -296,6 +296,43 @@ describe("selectOutreachActivityType — pure", () => {
         ).toBe("collection_dispute_opened");
     });
 
+    // Responsibility #7 — revised dispute acknowledgment.
+    it("maps a REVISED dispute acknowledgment to COLLECTION_DISPUTE_REVISED", async () => {
+        const { selectOutreachActivityType } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        const outreachContext: OutreachContext = {
+            kind: "acknowledge_exception",
+            category: "dispute",
+            wasRevision: true,
+        };
+
+        expect(
+            selectOutreachActivityType(
+                makeResult({ decision: "acknowledge_exception", outreachContext })
+            )
+        ).toBe("collection_dispute_revised");
+    });
+
+    it("maps a fresh (non-revision) dispute acknowledgment to COLLECTION_DISPUTE_OPENED", async () => {
+        const { selectOutreachActivityType } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        const outreachContext: OutreachContext = {
+            kind: "acknowledge_exception",
+            category: "dispute",
+            wasRevision: false,
+        };
+
+        expect(
+            selectOutreachActivityType(
+                makeResult({ decision: "acknowledge_exception", outreachContext })
+            )
+        ).toBe("collection_dispute_opened");
+    });
+
     it("maps a broken-promise follow_up (missedCommitment set) to COLLECTION_PROMISE_BROKEN", async () => {
         const { selectOutreachActivityType } = await import(
             "./collectionCaseOrchestrationService"
@@ -485,6 +522,64 @@ describe("isNewBlockerOpened — pure", () => {
                 { decision: "escalate", newStatus: "payment_blocked" },
                 "awaiting_response"
             )
+        ).toBe(false);
+    });
+});
+
+describe("isBlockerRevised — pure (Responsibility #7)", () => {
+    it("is true for a 'wait' decision into payment_blocked with evidence.wasRevision=true", async () => {
+        const { isBlockerRevised } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        expect(
+            isBlockerRevised({
+                decision: "wait",
+                newStatus: "payment_blocked",
+                evidence: { wasRevision: true },
+            })
+        ).toBe(true);
+    });
+
+    it("is false for a fresh blocker (evidence.wasRevision=false) — that case belongs to isNewBlockerOpened() instead", async () => {
+        const { isBlockerRevised } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        expect(
+            isBlockerRevised({
+                decision: "wait",
+                newStatus: "payment_blocked",
+                evidence: { wasRevision: false },
+            })
+        ).toBe(false);
+    });
+
+    it("is false for any non-wait decision, even with wasRevision evidence present", async () => {
+        const { isBlockerRevised } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        expect(
+            isBlockerRevised({
+                decision: "check_in",
+                newStatus: "payment_blocked",
+                evidence: { wasRevision: true },
+            })
+        ).toBe(false);
+    });
+
+    it("is false when newStatus isn't payment_blocked", async () => {
+        const { isBlockerRevised } = await import(
+            "./collectionCaseOrchestrationService"
+        );
+
+        expect(
+            isBlockerRevised({
+                decision: "wait",
+                newStatus: "disputed",
+                evidence: { wasRevision: true },
+            })
         ).toBe(false);
     });
 });
