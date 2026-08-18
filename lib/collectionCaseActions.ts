@@ -58,3 +58,30 @@ export async function deferCollectionCaseRequest(
         );
     }
 }
+
+// Responsibility #9 — a human answering the employee's escalation
+// prompt with free-form context/instruction. Resumes the case as part
+// of the same action (services/server/collectionCaseService.ts::
+// provideCollectionCaseGuidance()); distinct from resumeCollectionCaseRequest()
+// above, which carries no context.
+export async function provideCollectionCaseGuidanceRequest(
+    caseId: string,
+    guidance: string
+): Promise<void> {
+    const response = await fetch(
+        `/api/collection-cases/${caseId}/provide-guidance`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ guidance }),
+        }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+        throw new Error(
+            result.message ?? result.error ?? "Failed to record guidance for this case."
+        );
+    }
+}

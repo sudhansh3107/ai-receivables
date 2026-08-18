@@ -285,11 +285,14 @@ export default function DecisionFeed() {
         },
         {
           key: "review",
-          label: "Review",
+          label: "Review case",
           icon: Eye,
           tone: "review",
-          href: "/decisions",
-          ariaLabel: "Review this case's details",
+          // Responsibility #9 — straight to the case's own detail page
+          // (full context + the human-guidance interaction), not the
+          // generic /decisions list a human would then have to search.
+          href: `/collections/${decision.actionId}`,
+          ariaLabel: "Open this collection case",
         },
       ];
     }
@@ -348,7 +351,15 @@ export default function DecisionFeed() {
                   company={decision.customerName}
                   subtitle={decision.subtitle}
                   reasons={
-                    decision.kind === "low_confidence"
+                    // Responsibility #9 — a collection_escalation
+                    // candidate's reasons carry the actual
+                    // escalationReason sentence (see
+                    // decisionService.ts::buildCollectionEscalationCandidates()),
+                    // exactly the "why" a human needs before acting.
+                    // low_confidence's own reasons (extraction
+                    // confirmations) are unaffected.
+                    decision.kind === "low_confidence" ||
+                    decision.kind === "collection_escalation"
                       ? decision.reasons
                       : undefined
                   }

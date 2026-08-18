@@ -146,6 +146,60 @@ async function getCustomerContact(
     };
 }
 
+// Responsibility #9 (Escalate to Humans Appropriately) — pure, no I/O.
+// The MVP "proactive ask": concise, uses only context already in scope
+// at the moment of escalation (no new queries beyond the customer
+// contact lookup escalation already needs), and deliberately NOT an
+// intelligent questionnaire (§ approved MVP scope — that is V2). Built
+// once, at the exact moment computeEscalationGate() fires, and logged
+// into the SAME COLLECTION_CASE_ESCALATED activity row escalation
+// already writes — never a second row — so a case that is (re-)evaluated
+// without a NEW escalation decision can never produce a duplicate ask.
+function buildGuidancePrompt(params: {
+    customerName: string;
+    outstandingAmount: number;
+    reason: string;
+    exceptionCategory: string | null;
+    exceptionType: string | null;
+    exceptionDetail: string | null;
+    promiseStatus: string | null;
+    promiseAmount: number | string | null;
+    promiseDate: string | null;
+    lastResponseClassification: string | null;
+}): string {
+    const lines = [
+        `Collection case for ${params.customerName} has been escalated.`,
+        "",
+        `Outstanding: ${params.outstandingAmount}`,
+        `Reason: ${params.reason}`,
+    ];
+
+    if (params.exceptionCategory) {
+        const label = params.exceptionCategory === "dispute" ? "Dispute" : "Blocker";
+        const type = params.exceptionType?.replace(/_/g, " ") ?? "other";
+
+        lines.push(
+            `${label}: ${type}${params.exceptionDetail ? ` — ${params.exceptionDetail}` : ""}`
+        );
+    }
+
+    if (params.promiseStatus === "broken") {
+        lines.push(
+            `Last promise: ${params.promiseAmount ?? "an unstated amount"} by ${params.promiseDate ?? "an unstated date"} — broken.`
+        );
+    }
+
+    if (params.lastResponseClassification) {
+        lines.push(
+            `Most recent customer response: ${params.lastResponseClassification.replace(/_/g, " ")}.`
+        );
+    }
+
+    lines.push("", "What happened with this case, and how should I proceed?");
+
+    return lines.join("\n");
+}
+
 async function buildExposureSummary(
     customerId: string
 ): Promise<ExposureSummary> {
@@ -460,16 +514,45 @@ export async function evaluateOrOpenCollectionCase(
     await applyCaseTransition(claimed.id, claimed.status, result.fieldPatch);
 
     if (result.decision === "escalate") {
+        // Responsibility #9 — the "proactive ask" is built from data
+        // already in scope (assessment, the just-transitioned case row,
+        // one customer-contact lookup) and logged into this SAME
+        // activity row, additive-only (guidancePrompt), never a second
+        // COLLECTION_CASE_ESCALATED-adjacent row — see
+        // buildGuidancePrompt()'s own doc comment for why this can never
+        // duplicate across repeated evaluations of the same case.
+        const contact = await getCustomerContact(customerId);
+
+        const guidancePrompt = buildGuidancePrompt({
+            customerName: contact.companyName,
+            outstandingAmount: assessment.outstandingAmount,
+            reason: result.reason,
+            exceptionCategory: claimed.exception_category,
+            exceptionType: claimed.exception_type,
+            exceptionDetail: claimed.exception_detail,
+            promiseStatus: claimed.promise_status,
+            promiseAmount: claimed.promise_amount,
+            promiseDate: claimed.promise_date,
+            lastResponseClassification: claimed.last_response_classification,
+        });
+
         await logActivity({
             customerId,
             activityType: ActivityTypes.COLLECTION_CASE_ESCALATED,
             description: result.reason,
-            metadata: { caseId: claimed.id, ...result.evidence },
+            metadata: { caseId: claimed.id, ...result.evidence, guidancePrompt },
         });
 
+        // The proactive, human-facing notification — reuses the
+        // existing employee_activity live-feed mechanism (§ approved:
+        // no new notification architecture) so a human is told
+        // something needs them rather than having to remember to check
+        // the dashboard. The full prompt (with context) lives here;
+        // activity_log's own description stays the terse, deterministic
+        // gate reason it always has been.
         await logEmployeeActivity({
             activityType: "collection_case_escalated",
-            message: `Collection case escalated · ${result.priority} priority`,
+            message: guidancePrompt,
         });
     } else if (result.decision === "resolve") {
         await logActivity({

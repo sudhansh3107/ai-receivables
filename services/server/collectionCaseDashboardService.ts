@@ -199,6 +199,9 @@ const COLLECTION_ACTIVITY_TYPES: string[] = [
     ActivityTypes.COLLECTION_CASE_ESCALATED,
     ActivityTypes.COLLECTION_CASE_RESOLVED,
     ActivityTypes.COLLECTION_CASE_RESUMED_BY_HUMAN,
+    // Responsibility #9 (Escalate to Humans Appropriately).
+    ActivityTypes.COLLECTION_CASE_GUIDANCE_PROVIDED,
+    ActivityTypes.COLLECTION_CASE_ESCALATION_DEFERRED,
 ];
 
 // Single-case detail: case fields + a merged, chronological

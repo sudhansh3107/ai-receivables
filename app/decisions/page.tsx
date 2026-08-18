@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
     ArrowLeft,
     Clock3,
+    Eye,
     FileWarning,
     LucideIcon,
     ShieldAlert,
@@ -14,7 +15,9 @@ import { toast } from "sonner";
 import AppShell from "../components/layout/AppShell";
 import Page from "../components/ui/PageShell";
 import Card from "../components/ui/Card";
-import DecisionItem from "../components/headquarters/DecisionItem";
+import DecisionItem, {
+    type DecisionHoverAction,
+} from "../components/headquarters/DecisionItem";
 import PaymentDecisionFeed from "../components/headquarters/PaymentDecisionFeed";
 import { tokens } from "@/lib/theme/tokens";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
@@ -102,6 +105,23 @@ const KIND_STYLES: Record<
         actionLabel: "Resume outreach",
     },
 };
+
+// Responsibility #9 — a direct path to the case's own detail page
+// (full context + the human-guidance interaction) alongside this
+// page's existing always-visible "Resume outreach" action, so a human
+// isn't left to manually search /collections for the matching case.
+function buildReviewCaseAction(caseId: string): DecisionHoverAction[] {
+    return [
+        {
+            key: "review",
+            label: "Review case",
+            icon: Eye,
+            tone: "review",
+            href: `/collections/${caseId}`,
+            ariaLabel: "Open this collection case",
+        },
+    ];
+}
 
 export default function DecisionsPage() {
     const {
@@ -199,7 +219,12 @@ export default function DecisionsPage() {
                                         company={decision.customerName}
                                         subtitle={decision.subtitle}
                                         reasons={
-                                            decision.kind === "low_confidence"
+                                            // Responsibility #9 — surface
+                                            // the actual escalationReason
+                                            // sentence, same fix as
+                                            // Mission Control's DecisionFeed.
+                                            decision.kind === "low_confidence" ||
+                                            decision.kind === "collection_escalation"
                                                 ? decision.reasons
                                                 : undefined
                                         }
@@ -211,6 +236,11 @@ export default function DecisionsPage() {
                                                 decision.kind,
                                                 decision.actionId
                                             )
+                                        }
+                                        hoverActions={
+                                            decision.kind === "collection_escalation"
+                                                ? buildReviewCaseAction(decision.actionId)
+                                                : undefined
                                         }
                                     />
                                 );

@@ -4,6 +4,8 @@ import type {
     CaseState,
     CaseStatus,
 } from "./collectionDecisionEngine";
+import { logActivity } from "./activityLogService";
+import { ActivityTypes } from "@/lib/activityTypes";
 
 // ---------------------------------------------------------------------
 // Responsibility #3 (Collections & Follow-Up) — I/O primitives only.
@@ -706,7 +708,32 @@ export async function deferCollectionCaseEscalation(
     if (error) throw error;
 
     if (data) {
-        return { outcome: "deferred", case: data as CollectionCaseRow };
+        const row = data as CollectionCaseRow;
+
+        // Responsibility #9 — every meaningful human interaction with an
+        // escalated case must be auditable. Logged only on the actual
+        // outcome:"deferred" transition (never on the already_deferred
+        // fallback below, which is a repeated click within the same
+        // 24h window) so a duplicate "Keep monitoring" click never
+        // produces a duplicate activity row — the same idempotency
+        // discipline as every other human-action logging in this file.
+        // escalation_reason/evidence/status are all left untouched by
+        // this UPDATE (only escalation_deferred_at/updated_at change),
+        // so nothing about the escalation itself is lost or altered.
+        await logActivity({
+            customerId: row.customer_id,
+            activityType: ActivityTypes.COLLECTION_CASE_ESCALATION_DEFERRED,
+            description: "Human chose to keep monitoring; escalation deferred for 24 hours.",
+            metadata: {
+                caseId: row.id,
+                escalationReason: row.escalation_reason,
+                deferredUntil: new Date(
+                    new Date(now).getTime() + 24 * 60 * 60 * 1000
+                ).toISOString(),
+            },
+        });
+
+        return { outcome: "deferred", case: row };
     }
 
     const { data: existing, error: fetchError } = await supabase
@@ -731,4 +758,57 @@ export async function deferCollectionCaseEscalation(
         outcome: "already_deferred",
         case: existing as CollectionCaseRow,
     };
+}
+
+// Responsibility #9 (Escalate to Humans Appropriately) — the human
+// half of the escalation loop: escalation is NOT terminal, so this is
+// simply "resume, but the human also said something." Composes
+// resumeCollectionCaseFromEscalation()'s own CAS-guarded transition
+// (same destinationStatus rule, same escalation_deferred_at/
+// exception_status handling, same status='escalated' precondition)
+// rather than duplicating it — this file already has exactly one
+// implementation of "how does an escalated case return to normal
+// collection," and this reuses it instead of inventing a second.
+//
+// A duplicate/concurrent submission for the same case hits the exact
+// same rejection resumeCollectionCaseFromEscalation() already throws
+// (CaseTransitionConflictError on a lost CAS race, or the plain "not
+// escalated" Error if the case was already resumed by the time this
+// runs) — no separate idempotency mechanism needed.
+//
+// Deliberately logs exactly ONE activity (COLLECTION_CASE_GUIDANCE_PROVIDED)
+// for this action, not also a separate "resumed" row — the guidance
+// activity's own persistence already documents that the case resumed
+// as a direct, inseparable result of it (see that activity type's own
+// doc comment in lib/activityTypes.ts).
+export async function provideCollectionCaseGuidance(
+    caseId: string,
+    guidance: string
+): Promise<CollectionCaseRow> {
+    const trimmed = guidance.trim();
+
+    if (!trimmed) {
+        throw new Error("Guidance cannot be empty.");
+    }
+
+    const resumed = await resumeCollectionCaseFromEscalation(caseId);
+
+    await logActivity({
+        customerId: resumed.customer_id,
+        activityType: ActivityTypes.COLLECTION_CASE_GUIDANCE_PROVIDED,
+        description: trimmed,
+        metadata: {
+            caseId: resumed.id,
+            guidance: trimmed,
+            // The escalation cycle this guidance is closing — resumed
+            // still carries it (resumeCollectionCaseFromEscalation()
+            // never touches escalation_reason/escalated_at), so a
+            // human reading this row later can see exactly what it was
+            // responding to without cross-referencing timestamps.
+            escalationReason: resumed.escalation_reason,
+            escalatedAt: resumed.escalated_at,
+        },
+    });
+
+    return resumed;
 }

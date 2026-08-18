@@ -28,6 +28,7 @@ import {
     resumeCollectionCaseRequest,
     resolveCollectionCaseRequest,
     deferCollectionCaseRequest,
+    provideCollectionCaseGuidanceRequest,
 } from "@/lib/collectionCaseActions";
 
 const DETAIL_TABLES = ["collection_cases", "activity_log", "emails"];
@@ -98,7 +99,8 @@ function communicationIcon(entry: CommunicationEntry) {
         entry.activityType === "collection_promise_acknowledged" ||
         entry.activityType === "collection_exception_resolved" ||
         entry.activityType === "collection_case_resolved" ||
-        entry.activityType === "collection_case_resumed_by_human"
+        entry.activityType === "collection_case_resumed_by_human" ||
+        entry.activityType === "collection_case_guidance_provided"
     ) {
         return Handshake;
     }
@@ -121,6 +123,8 @@ function communicationTitle(entry: CommunicationEntry): string {
         collection_case_escalated: "Case escalated",
         collection_case_resolved: "Case resolved",
         collection_case_resumed_by_human: "Case resumed",
+        collection_case_guidance_provided: "Human guidance provided",
+        collection_case_escalation_deferred: "Kept monitoring",
     };
 
     return labels[entry.activityType ?? ""] ?? "Activity recorded";
@@ -145,6 +149,7 @@ export default function CollectionCaseDetailPage() {
     );
 
     const [actionPending, setActionPending] = useState<string | null>(null);
+    const [guidanceText, setGuidanceText] = useState("");
 
     async function handleAction(
         action: "resume" | "resolve" | "wait"
@@ -164,6 +169,24 @@ export default function CollectionCaseDetailPage() {
         } catch (err) {
             console.error(err);
             toast.error("Couldn't update this case. Please try again.");
+        } finally {
+            setActionPending(null);
+        }
+    }
+
+    async function handleSendGuidance() {
+        if (!guidanceText.trim()) return;
+
+        setActionPending("guidance");
+
+        try {
+            await provideCollectionCaseGuidanceRequest(caseId, guidanceText);
+            setGuidanceText("");
+            toast.success("Guidance recorded — case resumed.");
+            await refresh();
+        } catch (err) {
+            console.error(err);
+            toast.error("Couldn't record guidance. Please try again.");
         } finally {
             setActionPending(null);
         }
@@ -258,6 +281,57 @@ export default function CollectionCaseDetailPage() {
                                         : "Mark resolved"}
                                 </Button>
                             </div>
+                        )}
+
+                        {detail.status === "escalated" && (
+                            <Card className="mt-4 rounded-[24px]">
+                                <p className="text-[13px] font-medium text-[#1A1A1A]">
+                                    What happened with this case, and how
+                                    should I proceed?
+                                </p>
+
+                                <textarea
+                                    value={guidanceText}
+                                    onChange={(event) =>
+                                        setGuidanceText(event.target.value)
+                                    }
+                                    disabled={actionPending !== null}
+                                    placeholder="e.g. The customer said their PO is pending approval. They expect to pay next Wednesday. Follow up with them then."
+                                    rows={3}
+                                    className="
+                                        mt-3
+                                        w-full
+                                        rounded-xl
+                                        border
+                                        border-[#ECE4DA]
+                                        bg-[#FCFAF7]
+                                        p-3
+                                        text-[13px]
+                                        text-[#1A1A1A]
+                                        outline-none
+                                        transition-colors
+                                        duration-200
+                                        placeholder:text-[#A69C8F]
+                                        focus:border-[#8F6B4A]
+                                        disabled:opacity-50
+                                    "
+                                />
+
+                                <div className="mt-3 flex justify-end">
+                                    <Button
+                                        variant="primary"
+                                        disabled={
+                                            actionPending !== null ||
+                                            !guidanceText.trim()
+                                        }
+                                        onClick={handleSendGuidance}
+                                    >
+                                        {actionPending === "guidance"
+                                            ? "Sending…"
+                                            : "Send guidance & resume"}
+                                    </Button>
+                                </div>
+                            </Card>
                         )}
 
                         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
